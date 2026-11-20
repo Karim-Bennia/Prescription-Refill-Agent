@@ -9,12 +9,14 @@
 // Artera runs your agent to evaluate it, so it must start from env config alone.
 
 import { createServer } from "node:http";
+import { createRuntime } from "./runtime.js";
 
-const AGENT_PORT = Number(process.env.AGENT_PORT ?? 5050);
-const EHR = process.env.EHR_BASE_URL ?? "http://localhost:4010";
-const PHARM = process.env.PHARMACY_BASE_URL ?? "http://localhost:4010";
-const EHR_KEY = process.env.EHR_API_KEY ?? "dev-ehr-key";
-const PHARM_KEY = process.env.PHARMACY_API_KEY ?? "dev-pharmacy-key";
+const { config } = createRuntime(process.env);
+const AGENT_PORT = config.agentPort;
+const EHR = config.backend.ehrBaseUrl;
+const PHARM = config.backend.pharmacyBaseUrl;
+const EHR_KEY = config.backend.ehrApiKey;
+const PHARM_KEY = config.backend.pharmacyApiKey;
 
 /** Call the EHR service (auth header attached). e.g. ehr("/ehr/time") or
  *  ehr("/ehr/patients:match", { method: "POST", body: JSON.stringify({ factors }) }). */
@@ -55,4 +57,5 @@ const server = createServer(async (req, res) => {
   res.end(`{"error":"not found"}`);
 });
 
-server.listen(AGENT_PORT, () => console.log(`agent (skeleton) on http://localhost:${AGENT_PORT} -> EHR ${EHR}`));
+server.on("error", () => { console.error("Agent listener failed."); process.exitCode = 1; });
+server.listen(AGENT_PORT, "127.0.0.1", () => console.log(`agent (skeleton) on http://127.0.0.1:${AGENT_PORT}`));

@@ -1,6 +1,6 @@
 # Requirements and verification plan
 
-Authority: `docs/API.md`, then the supplied `conformance/run.ts` grading contract and README submission instructions. This is analysis only; all proposed tests below remain unimplemented. No hidden grading contract was supplied.
+Authority: `docs/API.md`, then the supplied `conformance/run.ts` grading contract and README submission instructions. Phase 2 implements configuration and the language-provider boundary; remaining workflow tests below are still planned. No hidden grading contract was supplied.
 
 ## Exact transport and identity contract
 
@@ -26,7 +26,7 @@ Medication has `medId`, `name`, `isControlled:boolean`, `schedule:CII|CIII|CIV|C
 
 ## Traceability matrix
 
-Paths refer to proposed modules under agent/ and proposed tests under tests/, unless marked existing. Requirements marked design are decisions filling gaps, not extra grader mandates.
+Paths refer to modules under agent/ and tests under tests/. Unless explicitly marked implemented below, modules/tests remain proposed. Requirements marked design are decisions filling gaps, not extra grader mandates.
 
 | ID / source | Requirement | Module | Automated verification planned |
 | --- | --- | --- | --- |
@@ -46,9 +46,10 @@ Paths refer to proposed modules under agent/ and proposed tests under tests/, un
 | A1 API §2 | After identity, ownership, eligibility and pharmacy confirmation POST refill; complete only on validated submitted receipt | actions.ts | workflow.test.ts: ordered API calls, exact patient/med IDs, failed submission never complete |
 | A2 design | Changed pharmacy PUT must succeed before refill; recheck eligibility before action; confirmation binds patient/med/pharmacy | actions.ts | actions.test.ts: PUT failure, stale confirmation, clinical recheck failure |
 | A3 design | Serialize per conversation, record pending/success/unknown action; never blindly retry uncertain writes | sessions.ts, actions.ts | actions.test.ts: double yes, concurrency, timeout after write, repeated terminal turn |
-| F1 design | Bounded read/model timeouts and retries, schema rejection, neutral errors, no fabricated success | errors.ts, adapters | failures.test.ts: 401/404/429/5xx, network, malformed response, model failure |
-| L1 user | Groq configured through GROQ_API_KEY and LLM_MODEL; model extracts proposals only, never authorizes or selects identity | llm-client.ts, workflow.ts | llm.test.ts: injection, invented IDs, invalid structured output, timeout |
-| S1 user | No credential exposure; minimize demographics in logs/model requests; no seed-specific behavior | config.ts, logging.ts | security.test.ts: redaction, cross-session attacks, alternate dataset |
+| F1 design | Bounded read/model timeouts and retries, schema rejection, neutral errors, no fabricated success | errors.ts, adapters | Phase 2 implemented: llm-client.test.ts covers model timeout including body reads, 401/403/404/429/5xx, network errors, retry bounds, malformed output and sanitized errors. Backend failure tests remain planned. |
+| L1 user | Groq configured through GROQ_API_KEY and LLM_MODEL; model extracts proposals only, never authorizes or selects identity | llm-client.ts, intent.ts, interpretation.ts, runtime.ts | Phase 2 implemented: llm-client.test.ts rejects invented IDs/authority/write fields, invalid structured output, refusal and truncation; fake provider injection/revalidation in llm-client.test.ts and runtime.test.ts. Workflow remains planned. |
+| S1 user | No credential exposure; minimize demographics in logs/model requests; no seed-specific behavior | config.ts, logging.ts | Phase 2 implemented: config.test.ts and llm-client.test.ts assert error redaction, no credential in model input and no retained raw exception cause; local-env.test.ts uses only synthetic temporary data. Cross-session/alternate-dataset tests remain planned. |
+| CFG1 Phase 2 user | Fail-fast environment-only configuration; reject missing keys, invalid model/origins/ports/timeout/retry bounds; preserve caller env | config.ts, local-env.ts, start.ts | Implemented: config.test.ts validates defaults, boundaries, placeholders and sanitized errors; local-env.test.ts checks optional file loading, caller precedence and file preservation. |
 | G1 conformance | Three scripted turns end complete; match, medications, refill calls exist; refill after match and same patient as medication lookup; medId present | workflow.ts | existing conformance/run.ts unchanged, plus stricter ordering assertions |
 | D1 README | One documented agent start command; env-only config; commercially available model provider/ID/version and settings in SUBMISSION | config.ts, SUBMISSION.md | startup smoke test with injected config; manual documentation review |
 | D2 README | Own safety tests, full secret-redacted AI transcripts in docs/ai-log/, incremental Git history, final private-repo push | tests/, submission artifacts | test runner plus manual delivery review; push belongs to later delivery phase |
@@ -97,3 +98,7 @@ These failures are existing starter limitations: `handleTurn` always returns the
 The isolated runtime used `PORT=14010`, `AGENT_PORT=15050`, `MOCK_BASE=EHR_BASE_URL=PHARMACY_BASE_URL=http://127.0.0.1:14010` and `AGENT_BASE=http://127.0.0.1:15050`. Child processes received only required Windows runtime environment variables plus this test configuration and explicitly synthetic service tokens. Existing .env credentials were never loaded or inherited by those children; mock startup output was suppressed. The first sandboxed launch failed with `spawn EPERM`; an approved execution outside the sandbox resolved that blocker. The cleanup helper reported failure for both owned launcher process trees; subsequent process and TCP-listener checks found neither launcher PID nor listening ports 14010/15050. No services were left listening on those test ports.
 
 The prior missing-dependency/ENOTCACHED results and declined installation approval describe the earlier attempt, not the current environment. Dependency installation and runtime execution are now verified; the absent test script and four conformance failures remain documented baseline limitations for Phase 2. No claim of passing conformance, implemented safety tests, completed refill or handoff is made.
+
+## Phase 2 verification
+
+The Phase 1 baseline above is historical. Phase 2 adds `npm test` and `npm run typecheck`, implements the configuration/language tests marked above, and preserves the unchanged grader and clinical fixtures. Current results, environment configuration, security findings and remaining limitations are recorded in `docs/PHASE2.md`. All clinical, identity, consent, duplicate-write and end-to-end refill requirements remain for later phases.

@@ -12,4 +12,4 @@
 - Prevent duplicate writes within sessions; never blindly retry an uncertain refill submission. Disclose limitations of in-memory persistence and missing upstream idempotency.
 - Make clean Git commits after successful verification. If verification is blocked, report it and obtain direction before committing functional work. The explicitly requested analysis-only documentation commit may record a blocked baseline honestly.
 - Report uncertainty, assumptions, partial successes and limitations clearly. Keep submission instructions reproducible and transcripts complete but secret-redacted.
-- Respect phase scope. This phase creates documentation only; stop after its requested commit. Do not implement subsequent phases without instruction.
+- Respect the phase scope explicitly authorized in the current user instructions. Stop after its requested commit; do not implement subsequent phases without instruction.

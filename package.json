@@ -6,12 +6,18 @@
   "description": "Candidate fixture — prescription-refill agent assessment (mock EHR + pharmacy, skeleton agent, conformance check).",
   "scripts": {
     "mock": "tsx mock/server.ts",
-    "agent": "tsx agent/server.ts",
-    "conformance": "tsx conformance/run.ts"
+    "agent": "tsx agent/start.ts",
+    "conformance": "tsx conformance/run.ts",
+    "test": "tsx --test tests/config.test.ts tests/llm-client.test.ts tests/runtime.test.ts tests/local-env.test.ts",
+    "typecheck": "tsc --noEmit",
+    "smoke:groq": "tsx agent/groq-smoke.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
   }
 }

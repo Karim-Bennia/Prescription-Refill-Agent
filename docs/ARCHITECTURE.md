@@ -1,6 +1,6 @@
 # Prescription-refill architecture
 
-Status: proposed architecture, no implementation in this phase. Requirements and planned verification are in REQUIREMENTS.md. Preserve Node HTTP, strict TypeScript, existing scripts and authoritative fixtures. Target a one-day implementation using small modules and the existing dependencies.
+Status: Phase 2 implements configuration, the Groq language adapter, its provider-independent consumer and automated tests. The refill workflow and clinical/action modules below remain proposed for later phases. Requirements and verification are in REQUIREMENTS.md; Phase 2 details are in PHASE2.md. Preserve Node HTTP, strict TypeScript and authoritative fixtures.
 
 ## Components and dependency direction
 
@@ -21,6 +21,8 @@ Status: proposed architecture, no implementation in this phase. Requirements and
 | errors.ts / logging.ts | Typed failures, safe patient messages, correlation and reason codes without raw text, demographics or credentials |
 
 Keep interfaces narrow (SOLID interface segregation); single responsibilities separate safety from language. Dependency inversion enables fake EHR, deterministic clock responses, fake model and in-memory sessions in tests. Explicit state transitions make illegal action ordering reviewable. Pure policy functions support boundary tables. These patterns serve correctness; no event bus, database, queue, generic agent framework or inheritance hierarchy is needed.
+
+Phase 2 composition: `start.ts` optionally loads local configuration through Node's built-in environment loader, then imports the server. `config.ts` validates an explicitly selected environment schema and returns immutable configuration. `runtime.ts` assembles `LanguageInterpreter`, defaulting to `GroqLanguageInterpreter`; tests can inject a fake. `intent.ts` owns the narrow provider interface and strict extraction schema. `interpretation.ts` revalidates proposals and maps clarification topics to fixed safe text. `errors.ts` contains provider-independent sanitized errors. The Groq adapter has no EHR/pharmacy client, tool interface, patient IDs or action permissions. It uses native fetch and Zod, with no SDK dependency. The starter server validates configuration but does not call the model until a later workflow phase connects it.
 
 ## Workflow and state
 
@@ -46,4 +48,4 @@ Pharmacy PUT is value-idempotent but an uncertain result needs readback before p
 
 ## Implementation and verification sequence for a later phase
 
-Implement contracts/adapters and pure identity/policy first, then workflow/session/action gates, then constrained language adapter and transport. Add the mapped tests with each functional change. Run strict typecheck, policy/identity/action failure tests and unchanged conformance against a fresh isolated mock. Test alternate synthetic records rather than relying on seed IDs. Inspect recorded calls for forbidden side effects. Document exact environment loading/start command, model provider and identifier/version, settings and limitations in SUBMISSION.md, then archive the full redacted session transcript before final delivery. No such implementation or submission edits are authorized in this phase.
+Phase 2 has completed the configuration and constrained language boundary. Later phases will implement service adapters, pure identity/policy, workflow/session/action gates and transport hardening. Add the mapped tests with each functional change. Run strict typecheck, policy/identity/action failure tests and unchanged conformance against a fresh isolated mock. Test alternate synthetic records rather than relying on seed IDs. Inspect recorded calls for forbidden side effects. Document final submission details in SUBMISSION.md and archive the authentic redacted session transcript before final delivery. Phase 2 does not implement the refill workflow or claim submission readiness.
