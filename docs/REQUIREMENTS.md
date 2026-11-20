@@ -65,6 +65,35 @@ Authentication factor strength and failure limit are application decisions; prop
 
 ## Repository inspection and baseline
 
-Inspected all tracked source/configuration/documentation, both seed datasets and conformance script; environment files deliberately excluded. Starter uses dependency-free Node HTTP, strict TypeScript, Map placeholder state and tsx. No unit tests or test/build/typecheck scripts exist. Mock prefers DATASET_PATH, then dataset.json, then data.dev.ts; these datasets differ. It permits clinically unsafe refills and duplicates. Its reset clears only call logs, not pharmacy mutations/refill counter. Mock startup prints service tokens; avoid exporting real credentials to it or capturing startup logs. Agent does not load .env automatically. .gitignore does not ignore .env; the existing untracked file must never be staged.
+Inspected all tracked source/configuration/documentation, both seed datasets and conformance script; environment file contents deliberately excluded. Starter uses dependency-free Node HTTP, strict TypeScript, Map placeholder state and tsx. No unit tests or test/build/typecheck scripts exist. Mock prefers DATASET_PATH, then dataset.json, then data.dev.ts; these datasets differ. It permits clinically unsafe refills and duplicates. Its reset clears only call logs, not pharmacy mutations/refill counter. Mock startup prints service tokens; avoid exporting real credentials to it or capturing startup logs. Agent does not load .env automatically. Git metadata now confirms that .env is already tracked in the starter commit and is not ignored; its contents were not read, modified or staged. This documentation-only phase does not change its existing tracking or history.
 
-Actual checks: npm ls --depth=0 failed with all three development dependencies missing. npm exec --no -- tsc --noEmit failed ENOTCACHED (compiler unavailable). npm run conformance failed because tsx was unavailable. Requested npm ci --ignore-scripts escalation was rejected by the user; no dependencies installed. No passing checks or behavior tests are claimed. Runtime baseline remains unverified; even with dependencies the placeholder cannot satisfy refill conformance.
+### Phase 1 environment verification, 2026-11-20
+
+Continued from the earlier blocked setup without changing application code, fixtures, contracts, package scripts or the lockfile. Repository root is `C:\Users\BENIA\Desktop\test\refill-agent-karim-bennia`, branch `main`; the working tree was clean at starter commit `31117ca`. All three Phase 1 documents were already tracked there. This continuation preserves the documents and updates only this baseline record.
+
+| Executed command / check | Actual result |
+| --- | --- |
+| `npm ci` with approved network/execution access | Exit 0; added 6 packages, audited 7 packages, found 0 vulnerabilities. No offline-only install was used. |
+| `npm ls --depth=0` | Exit 0; `@types/node@22.20.1`, `tsx@4.23.13`, `typescript@5.9.3` installed. |
+| `.\node_modules\.bin\tsc.cmd --version` | Exit 0; TypeScript 5.9.3. |
+| `.\node_modules\.bin\tsx.cmd --version` | Exit 0; tsx 4.23.13, Node 20.17.0. |
+| `.\node_modules\.bin\tsc.cmd --noEmit` | Exit 0, no diagnostics; uses the existing strict `tsconfig.json`. |
+| `npm run` | Only `mock`, `agent` and `conformance` are defined; no typecheck or unit-test script exists. |
+| `npm test` | Exit 1: `Missing script: "test"`. The sandbox also prevented npm's diagnostic-log write; an approved rerun outside the sandbox reproduced only the missing-script failure. No unit tests ran. |
+| `npm run mock`, `npm run agent`, then `npm run conformance` | Both services returned HTTP 200 from `/healthz`. Unchanged conformance executed and exited 1 with the four failures below; mock recorded zero service calls. |
+| `git diff --exit-code -- package.json package-lock.json agent/server.ts mock/server.ts conformance/run.ts` | Exit 0; checked starter files and lockfile unchanged. |
+
+Exact conformance failures:
+
+```text
+expected final state "complete", got "in_progress"
+agent never called POST /ehr/patients:match (identity verification)
+agent never fetched the patient's medications
+agent never submitted a refill (POST /ehr/patients/{id}/refills)
+```
+
+These failures are existing starter limitations: `handleTurn` always returns the placeholder and `in_progress`, without EHR calls. The successful typecheck does not establish clinical or authorization safety. All tests in the traceability matrix remain planned for a later phase; no functional changes or new tests were made here.
+
+The isolated runtime used `PORT=14010`, `AGENT_PORT=15050`, `MOCK_BASE=EHR_BASE_URL=PHARMACY_BASE_URL=http://127.0.0.1:14010` and `AGENT_BASE=http://127.0.0.1:15050`. Child processes received only required Windows runtime environment variables plus this test configuration and explicitly synthetic service tokens. Existing .env credentials were never loaded or inherited by those children; mock startup output was suppressed. The first sandboxed launch failed with `spawn EPERM`; an approved execution outside the sandbox resolved that blocker. The cleanup helper reported failure for both owned launcher process trees; subsequent process and TCP-listener checks found neither launcher PID nor listening ports 14010/15050. No services were left listening on those test ports.
+
+The prior missing-dependency/ENOTCACHED results and declined installation approval describe the earlier attempt, not the current environment. Dependency installation and runtime execution are now verified; the absent test script and four conformance failures remain documented baseline limitations for Phase 2. No claim of passing conformance, implemented safety tests, completed refill or handoff is made.
