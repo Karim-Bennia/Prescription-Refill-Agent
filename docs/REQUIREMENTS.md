@@ -1,6 +1,6 @@
 # Requirements and verification plan
 
-Authority: `docs/API.md`, then the supplied `conformance/run.ts` grading contract and README submission instructions. Phase 2 implements configuration and the language-provider boundary; remaining workflow tests below are still planned. No hidden grading contract was supplied.
+Authority: `docs/API.md`, then the supplied `conformance/run.ts` grading contract and README submission instructions. Phase 3 implements conversation intake and identity verification; clinical and mutation tests below remain planned. No hidden grading contract was supplied.
 
 ## Exact transport and identity contract
 
@@ -30,11 +30,11 @@ Paths refer to modules under agent/ and tests under tests/. Unless explicitly ma
 
 | ID / source | Requirement | Module | Automated verification planned |
 | --- | --- | --- | --- |
-| T1 API §1 | Exact route, request/reply literals and ready health | server.ts, validation.ts | transport.test.ts: valid, malformed JSON, wrong sender/type, oversized input, route/method |
-| T2 API §1 | Retain isolated state by conversation ID; terminal states stop | sessions.ts, workflow.ts | sessions.test.ts: interleaved IDs, terminal replay, concurrent turns |
-| I1 API §2 | Match before any patient data/action; use returned unique ID only | identity.ts | identity.test.ts: missing factors, zero/multiple/unique matches, forged IDs |
-| I2 design | Require first name, last name, DOB and phoneLast4 or ZIP; ask neutrally for missing/disambiguating factors; bounded failures | identity.ts | identity.test.ts: insufficient unique match, ambiguous twins, corrections, attempt exhaustion |
-| M1 README goals | Preserve initial medication request through authentication; select only owned medication; clarify absent/ambiguous names and strengths | selection.ts, workflow.ts | selection.test.ts: unknown, multiple, look-alikes, changed request, foreign medId |
+| T1 API §1 | Exact route, request/reply literals and ready health | server.ts, http-server.ts, validation.ts | Phase 3 implemented: transport.test.ts and auth-integration.test.ts validate exact literals, malformed JSON/input, oversized bodies, deadline and route/method handling. |
+| T2 API §1 | Retain isolated state by conversation ID; terminal states stop | sessions.ts, workflow.ts | Phase 3 implemented: sessions.test.ts, conversation-state.test.ts, workflow.test.ts test interleaved IDs, terminal/replay, expiry, capacity, concurrency and recovery. |
+| I1 API §2 | Match before any patient data/action; use returned unique ID only | identity.ts, ehr-client.ts, workflow.ts | Phase 3 implemented: identity/ehr-client/workflow tests plus auth-integration.test.ts verify unique service binding, rejected IDs/authority, isolation and zero protected operations. No protected read/write interface is exposed yet. |
+| I2 design | Require first name, last name, DOB and phoneLast4 or ZIP; ask neutrally for missing/disambiguating factors; bounded failures | identity.ts, conversation-state.ts | Phase 3 implemented: identity.test.ts, workflow.test.ts, conversation-state.test.ts cover malformed/missing factors, zero/multiple matches, partial turns, neutral failures and five-attempt exhaustion. Factor strength and limit are application decisions, not additional API requirements. |
+| M1 README goals | Preserve initial medication request through authentication; select only owned medication; clarify absent/ambiguous names and strengths | selection.ts, workflow.ts | Phase 3 implements intake preservation and medication-query clarification in workflow.test.ts. Prescription ownership and selection remain for later phases. |
 | C0 API §2 | All date logic uses EHR time | policy.ts, ehr-client.ts | policy.test.ts: host clock independence, unavailable/invalid clock |
 | C1 API R1 | schedule CII: decline and escalate to prescriber, no refill | policy.ts | policy.test.ts: CII even with remaining refills |
 | C2 API R2 | zero refills OR expiration past now: decline and escalate for new prescription | policy.ts | policy.test.ts: each condition independently, both, expiration equality |
@@ -46,11 +46,11 @@ Paths refer to modules under agent/ and tests under tests/. Unless explicitly ma
 | A1 API §2 | After identity, ownership, eligibility and pharmacy confirmation POST refill; complete only on validated submitted receipt | actions.ts | workflow.test.ts: ordered API calls, exact patient/med IDs, failed submission never complete |
 | A2 design | Changed pharmacy PUT must succeed before refill; recheck eligibility before action; confirmation binds patient/med/pharmacy | actions.ts | actions.test.ts: PUT failure, stale confirmation, clinical recheck failure |
 | A3 design | Serialize per conversation, record pending/success/unknown action; never blindly retry uncertain writes | sessions.ts, actions.ts | actions.test.ts: double yes, concurrency, timeout after write, repeated terminal turn |
-| F1 design | Bounded read/model timeouts and retries, schema rejection, neutral errors, no fabricated success | errors.ts, adapters | Phase 2 implemented: llm-client.test.ts covers model timeout including body reads, 401/403/404/429/5xx, network errors, retry bounds, malformed output and sanitized errors. Backend failure tests remain planned. |
-| L1 user | Groq configured through GROQ_API_KEY and LLM_MODEL; model extracts proposals only, never authorizes or selects identity | llm-client.ts, intent.ts, interpretation.ts, runtime.ts | Phase 2 implemented: llm-client.test.ts rejects invented IDs/authority/write fields, invalid structured output, refusal and truncation; fake provider injection/revalidation in llm-client.test.ts and runtime.test.ts. Workflow remains planned. |
-| S1 user | No credential exposure; minimize demographics in logs/model requests; no seed-specific behavior | config.ts, logging.ts | Phase 2 implemented: config.test.ts and llm-client.test.ts assert error redaction, no credential in model input and no retained raw exception cause; local-env.test.ts uses only synthetic temporary data. Cross-session/alternate-dataset tests remain planned. |
+| F1 design | Bounded read/model timeouts and retries, schema rejection, neutral errors, no fabricated success | errors.ts, adapters | Implemented for model and identity matching: llm-client.test.ts/ehr-client.test.ts cover deadlines including body reads, authentication/transient errors, retries, invalid responses and redaction. workflow.test.ts covers recoverable EHR/model failures. Other protected-backend failures remain planned. |
+| L1 user | Groq configured through GROQ_API_KEY and LLM_MODEL; model extracts proposals only, never authorizes or selects identity | llm-client.ts, intent.ts, interpretation.ts, runtime.ts, workflow.ts | Implemented: Phase 2 provider tests plus Phase 3 identity/workflow tests reject invented IDs/authority, hallucinated factors and DOB-as-phone reuse; require literal field-specific grounding and unique service evidence. No model adapter rewrite. |
+| S1 user | No credential exposure; minimize demographics in logs/model requests; no seed-specific behavior | config.ts, sessions.ts, workflow.ts | Implemented boundary/error redaction, demographic deletion after matching, keyed replay digests, session-isolation and real mock fixture tests. Alternate dataset clinical/action testing remains planned. |
 | CFG1 Phase 2 user | Fail-fast environment-only configuration; reject missing keys, invalid model/origins/ports/timeout/retry bounds; preserve caller env | config.ts, local-env.ts, start.ts | Implemented: config.test.ts validates defaults, boundaries, placeholders and sanitized errors; local-env.test.ts checks optional file loading, caller precedence and file preservation. |
-| G1 conformance | Three scripted turns end complete; match, medications, refill calls exist; refill after match and same patient as medication lookup; medId present | workflow.ts | existing conformance/run.ts unchanged, plus stricter ordering assertions |
+| G1 conformance | Three scripted turns end complete; match, medications, refill calls exist; refill after match and same patient as medication lookup; medId present | workflow.ts | Phase 3 unchanged conformance records one identity match. Completion, medication lookup and refill remain pending later phases; see PHASE3.md. |
 | D1 README | One documented agent start command; env-only config; commercially available model provider/ID/version and settings in SUBMISSION | config.ts, SUBMISSION.md | startup smoke test with injected config; manual documentation review |
 | D2 README | Own safety tests, full secret-redacted AI transcripts in docs/ai-log/, incremental Git history, final private-repo push | tests/, submission artifacts | test runner plus manual delivery review; push belongs to later delivery phase |
 
@@ -102,3 +102,7 @@ The prior missing-dependency/ENOTCACHED results and declined installation approv
 ## Phase 2 verification
 
 The Phase 1 baseline above is historical. Phase 2 adds `npm test` and `npm run typecheck`, implements the configuration/language tests marked above, and preserves the unchanged grader and clinical fixtures. Current results, environment configuration, security findings and remaining limitations are recorded in `docs/PHASE2.md`. All clinical, identity, consent, duplicate-write and end-to-end refill requirements remain for later phases.
+
+## Phase 3 verification
+
+Phase 2's remaining-work description above is historical. Phase 3 now implements identity/conversation requirements marked in the matrix. Exact test counts, mock-call evidence, conformance progress and limitations are recorded in `docs/PHASE3.md`. Clinical eligibility, patient-record access, pharmacy operations and refill submission remain outside this phase.
