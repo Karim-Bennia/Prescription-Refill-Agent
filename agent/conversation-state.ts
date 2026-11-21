@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { hasRequiredIdentity, identityFactorsSchema } from "./identity.js";
+import { refillReceiptSchema } from "./clinical-types.js";
+import { policyReasonSchema } from "./policy.js";
 
 export const MAX_AUTH_ATTEMPTS = 5;
 
@@ -13,6 +15,8 @@ const identityContext = {
   failures: z.number().int().min(0).max(MAX_AUTH_ATTEMPTS - 1),
 };
 const patientIdSchema = z.string().trim().min(1).max(256);
+const selectedRequestSchema = z.strictObject({ medicationQuery: medicationQuerySchema });
+const candidateSchema = z.strictObject({ medId: z.string().min(1).max(200), name: z.string().min(1).max(300) });
 
 export const conversationStateSchema = z.discriminatedUnion("phase", [
   z.strictObject({ phase: z.literal("collecting_identity"), ...identityContext }),
@@ -28,10 +32,30 @@ export const conversationStateSchema = z.discriminatedUnion("phase", [
     reason: z.enum(["authentication_failed", "identity_change", "expired"]),
   }),
   z.strictObject({ phase: z.literal("closed"), reason: z.literal("cancelled") }),
+  z.strictObject({
+    phase: z.literal("medication_clarification"), patientId: patientIdSchema,
+    request: refillRequestSchema.nullable(), candidates: z.array(candidateSchema).max(1000),
+  }),
+  z.strictObject({
+    phase: z.literal("awaiting_pharmacy_confirmation"), patientId: patientIdSchema,
+    request: selectedRequestSchema, medId: z.string().min(1).max(200), medicationName: z.string().min(1).max(300),
+  }),
+  z.strictObject({
+    phase: z.literal("clinical_escalated"), patientId: patientIdSchema,
+    reason: z.enum(["policy_blocked", "invalid_data", "no_prescriptions", "refill_unknown", "refill_rejected"]),
+    policyReasons: z.array(policyReasonSchema).max(6),
+  }),
+  z.strictObject({
+    phase: z.literal("refill_submitted"), patientId: patientIdSchema,
+    medId: z.string().min(1).max(200), pharmacyId: z.string().min(1).max(200),
+    receipt: refillReceiptSchema,
+  }),
 ]);
 
 export type ConversationState = z.infer<typeof conversationStateSchema>;
-export type AuthenticatedState = Extract<ConversationState, { patientId: string }>;
+export type AuthenticatedState = Extract<ConversationState, {
+  phase: "collecting_request" | "ready" | "medication_clarification" | "awaiting_pharmacy_confirmation";
+}>;
 
 const eventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("context_updated"), factors: identityFactorsSchema, request: refillRequestSchema.nullable() }),
@@ -42,6 +66,14 @@ const eventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("request_updated"), request: refillRequestSchema }),
   z.strictObject({ type: z.literal("cancel") }),
   z.strictObject({ type: z.literal("identity_change") }),
+  z.strictObject({ type: z.literal("medication_clarification"), request: refillRequestSchema.nullable(), candidates: z.array(candidateSchema).max(1000) }),
+  z.strictObject({ type: z.literal("prescription_eligible"), request: selectedRequestSchema, medId: z.string().min(1).max(200), medicationName: z.string().min(1).max(300) }),
+  z.strictObject({
+    type: z.literal("clinical_stop"),
+    reason: z.enum(["policy_blocked", "invalid_data", "no_prescriptions", "refill_unknown", "refill_rejected"]),
+    policyReasons: z.array(policyReasonSchema).max(6),
+  }),
+  z.strictObject({ type: z.literal("refill_submitted"), pharmacyId: z.string().min(1).max(200), receipt: refillReceiptSchema }),
 ]);
 export type ConversationEvent = z.infer<typeof eventSchema>;
 
@@ -68,7 +100,15 @@ export function createInitialState(): ConversationState {
 }
 
 export function isAuthenticated(state: ConversationState): state is AuthenticatedState {
-  return state.phase === "collecting_request" || state.phase === "ready";
+  return state.phase === "collecting_request" || state.phase === "ready"
+    || state.phase === "medication_clarification" || state.phase === "awaiting_pharmacy_confirmation";
+}
+
+export function isTerminal(state: ConversationState): state is Extract<ConversationState, {
+  phase: "escalated" | "closed" | "clinical_escalated" | "refill_submitted";
+}> {
+  return state.phase === "escalated" || state.phase === "closed"
+    || state.phase === "clinical_escalated" || state.phase === "refill_submitted";
 }
 
 export function requireAuthenticatedPatient(state: ConversationState): string {
@@ -82,9 +122,13 @@ export function publicConversationState(state: ConversationState): "in_progress"
     case "collecting_identity":
     case "verifying_identity":
     case "collecting_request":
-    case "ready": return "in_progress";
+    case "ready":
+    case "medication_clarification":
+    case "awaiting_pharmacy_confirmation": return "in_progress";
     case "escalated": return "escalated";
-    case "closed": return "complete";
+    case "clinical_escalated": return "escalated";
+    case "closed":
+    case "refill_submitted": return "complete";
     default: {
       const exhaustive: never = state;
       return exhaustive;
@@ -102,7 +146,7 @@ function authenticatedRequest(patientId: string, request: RefillRequest | null):
 export function transition(state: ConversationState, event: ConversationEvent): ConversationState {
   const current = validateConversationState(state);
   const parsedEvent = eventSchema.safeParse(event);
-  if (!parsedEvent.success || current.phase === "escalated" || current.phase === "closed") throw new InvalidTransitionError();
+  if (!parsedEvent.success || isTerminal(current)) throw new InvalidTransitionError();
   const input = parsedEvent.data;
   switch (input.type) {
     case "context_updated":
@@ -132,6 +176,20 @@ export function transition(state: ConversationState, event: ConversationEvent): 
     case "identity_change":
       if (!isAuthenticated(current)) throw new InvalidTransitionError();
       return { phase: "escalated", reason: "identity_change" };
+    case "medication_clarification":
+      if (!isAuthenticated(current)) throw new InvalidTransitionError();
+      return { phase: "medication_clarification", patientId: current.patientId, request: input.request, candidates: input.candidates };
+    case "prescription_eligible":
+      if (!isAuthenticated(current)) throw new InvalidTransitionError();
+      return { phase: "awaiting_pharmacy_confirmation", patientId: current.patientId,
+        request: input.request, medId: input.medId, medicationName: input.medicationName };
+    case "clinical_stop":
+      if (!isAuthenticated(current)) throw new InvalidTransitionError();
+      return { phase: "clinical_escalated", patientId: current.patientId, reason: input.reason, policyReasons: input.policyReasons };
+    case "refill_submitted":
+      if (current.phase !== "awaiting_pharmacy_confirmation") throw new InvalidTransitionError();
+      return { phase: "refill_submitted", patientId: current.patientId, medId: current.medId,
+        pharmacyId: input.pharmacyId, receipt: input.receipt };
     default: {
       const exhaustive: never = input;
       throw new InvalidTransitionError();

@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto";
 import {
-  isAuthenticated, publicConversationState, requireAuthenticatedPatient, transition, validateConversationState,
+  isAuthenticated, isTerminal, publicConversationState, requireAuthenticatedPatient, transition, validateConversationState,
   type ConversationState, type RefillRequest,
 } from "./conversation-state.js";
 import { matchResultSchema, type IdentityMatcher } from "./ehr-client.js";
@@ -10,13 +10,15 @@ import {
 } from "./identity.js";
 import { interpretMessage } from "./interpretation.js";
 import type { LanguageInterpreter, Interpretation } from "./intent.js";
-import type { SessionRepository, SessionUpdate } from "./sessions.js";
+import { bindSessionPatient, type SessionRepository, type SessionUpdate } from "./sessions.js";
 import { InputValidationError, requestSchema, type AgentReply } from "./validation.js";
+import { clinicalReply, type PrescriptionWorkflow } from "./clinical-workflow.js";
 
 interface Dependencies {
   readonly matcher: IdentityMatcher;
   readonly interpreter: LanguageInterpreter;
   readonly sessions: SessionRepository;
+  readonly clinical?: PrescriptionWorkflow;
 }
 interface Replay { digest: string; stateDigest: string; reply: AgentReply }
 
@@ -26,10 +28,12 @@ const isRetry = (text: string): boolean => /^(?:retry|try again|please try again
 const isSimple = (text: string): boolean => /^(?:yes|no|ok|okay|hello|hi|thanks|thank you)[.!]?$/i.test(text)
   || /^(?:yes[, ]+)?keep my pharmacy[.!]?$/i.test(text);
 const mentionsIdentitySwitch = (text: string): boolean => /\b(?:patient\s*id|switch\s+(?:the\s+)?patient|change\s+(?:my\s+)?identity|another\s+patient)\b/i.test(text);
+const negativeRefill = (text: string): boolean => /\b(?:do\s+not|don't|dont|never|no\s+longer)\b[\s\S]{0,60}\b(?:refill|renew)\b/i.test(text);
 
 function refillRequest(text: string): RefillRequest | null {
   if (!/\b(?:refill|renew)\b/i.test(text) || /\b(?:do not|don't|not to)\s+(?:refill|renew)\b/i.test(text)) return null;
-  const name = /\b(?:refill|renew)\s+(?:(?:my|the)\s+)?([^.!?\n]{1,200})(?:[.!?]|$)/i.exec(text)?.[1]?.trim();
+  const literal = /\b(?:refill|renew)\s+(?:(?:my|the)\s+)?([\s\S]+)$/i.exec(text)?.[1]?.trim().replace(/[.!?]+$/, "");
+  const name = literal && literal.length <= 200 ? literal : undefined;
   return { medicationQuery: name && !/^(?:a\s+)?(?:prescription|medication|medicine|request|please)$/i.test(name) ? name : null };
 }
 
@@ -52,6 +56,10 @@ function replyFor(state: ConversationState): string {
     case "verifying_identity": return "Identity verification is in progress. No refill has been submitted.";
     case "collecting_request": return "Your details were verified. Which medication would you like to request a refill for? Please include its name and strength.";
     case "ready": return "Your details were verified and your medication request is saved for prescription review. Prescription processing is not available in this phase. No refill has been submitted.";
+    case "medication_clarification":
+    case "awaiting_pharmacy_confirmation":
+    case "clinical_escalated":
+    case "refill_submitted": return clinicalReply(state);
     case "closed": return "This conversation has been closed at your request. No refill has been submitted.";
     case "escalated":
       switch (state.reason) {
@@ -79,21 +87,26 @@ export class ConversationEngine {
     const digest = createHmac("sha256", this.#replayKey).update(text).digest("hex");
     const stateDigest = (state: ConversationState): string => createHmac("sha256", this.#replayKey)
       .update(JSON.stringify(validateConversationState(state))).digest("hex");
-    return this.#dependencies.sessions.run(conversationId, async current => {
+    return this.#dependencies.sessions.run(conversationId, async (current, context) => {
       const finish = (state: ConversationState, message = replyFor(state), cache = true): SessionUpdate<AgentReply> => {
         const reply: AgentReply = { messages: [{ from: "agent", text: message }], state: publicConversationState(state) };
         if (cache) this.#replays.set(conversationId, { digest, stateDigest: stateDigest(state), reply: structuredClone(reply) });
         else this.#replays.delete(conversationId);
         return { state, result: reply };
       };
+      const finishClinical = async (state: ConversationState): Promise<SessionUpdate<AgentReply>> => {
+        if (!this.#dependencies.clinical || !isAuthenticated(state)) return finish(state);
+        const progress = await this.#dependencies.clinical.advance(state, context);
+        return finish(progress.state, progress.message, progress.cache);
+      };
       // Terminal/expiry rules take precedence over any cached authenticated response.
-      if (current.phase === "escalated" || current.phase === "closed") return finish(current);
+      if (isTerminal(current)) return finish(current);
       const replay = this.#replays.get(conversationId);
       // A failed repository commit must not make an uncommitted reply authoritative.
       if (replay?.digest === digest && replay.stateDigest === stateDigest(current)) {
         return { state: current, result: structuredClone(replay.reply) };
       }
-      if (isCancel(text)) return finish(transition(current, { type: "cancel" }));
+      if (isCancel(text) || negativeRefill(text)) return finish(transition(current, { type: "cancel" }));
       if (current.phase === "verifying_identity") {
         // A restored/injected unfinished state must not be trusted as authenticated.
         return finish(transition(current, { type: "verification_unavailable" }),
@@ -106,10 +119,26 @@ export class ConversationEngine {
       if (isAuthenticated(current) && (Object.keys(direct).length > 0 || mentionsIdentitySwitch(text))) {
         return finish(transition(current, { type: "identity_change" }));
       }
+      if (current.phase === "medication_clarification" || current.phase === "awaiting_pharmacy_confirmation") {
+        // Phase 5 owns the actual pharmacy prompt/confirmation flow. A generic yes cannot authorize a write.
+        if (current.phase === "awaiting_pharmacy_confirmation" && !directRequest
+          && (isSimple(text) || /\bpharmacy\b/i.test(text))) return finish(current);
+        if (isSimple(text)) return finish(current);
+        const query = directRequest ? directRequest.medicationQuery
+          : isRetry(text) ? current.request?.medicationQuery ?? null : text.length <= 200 ? text : null;
+        const next = transition(current, { type: "request_updated", request: { medicationQuery: query } });
+        return finishClinical(next);
+      }
       // Ready means intake is complete, not clinical eligibility or permission to prescribe.
       if (current.phase === "ready") {
         requireAuthenticatedPatient(current);
-        return finish(directRequest ? transition(current, { type: "request_updated", request: directRequest }) : current);
+        const changed = directRequest ?? (this.#dependencies.clinical && !isSimple(text) && !isRetry(text)
+          ? { medicationQuery: text.length <= 200 ? text : null } : null);
+        return finishClinical(changed ? transition(current, { type: "request_updated", request: changed }) : current);
+      }
+      if (this.#dependencies.clinical && current.phase === "collecting_request") {
+        const query = directRequest ? directRequest.medicationQuery : !isSimple(text) && !isRetry(text) && text.length <= 200 ? text : null;
+        return finishClinical(transition(current, { type: "request_updated", request: { medicationQuery: query } }));
       }
 
       let proposal: Interpretation | undefined;
@@ -127,19 +156,20 @@ export class ConversationEngine {
       const grounded = proposal ? groundIdentityFactors(proposal.identity, text) : {};
       const supplied = validateIdentityFactors({ ...grounded, ...direct });
       const proposedRequest: RefillRequest | null = proposal?.intent === "refill_request"
-        ? { medicationQuery: groundedQuery(proposal.medicationQuery, text) } : null;
+        ? { medicationQuery: this.#dependencies.clinical ? text.length <= 200 ? text : null
+          : groundedQuery(proposal.medicationQuery, text) } : null;
       const request = directRequest ?? proposedRequest;
 
       if (current.phase === "collecting_request") {
         requireAuthenticatedPatient(current);
         if (Object.keys(supplied).length > 0) return finish(transition(current, { type: "identity_change" }));
         const query = request?.medicationQuery ?? (proposal ? groundedQuery(proposal.medicationQuery, text) : null);
-        return finish(query ? transition(current, { type: "request_updated", request: { medicationQuery: query } }) : current);
+        return finishClinical(query ? transition(current, { type: "request_updated", request: { medicationQuery: query } }) : current);
       }
 
       let state = transition(current, {
         type: "context_updated", factors: validateIdentityFactors({ ...current.factors, ...supplied }),
-        request: request?.medicationQuery ? request : current.request ?? request,
+        request: this.#dependencies.clinical && request ? request : request?.medicationQuery ? request : current.request ?? request,
       });
       if (!hasRequiredIdentity(state.phase === "collecting_identity" ? state.factors : {})) return finish(state);
       // Do not re-submit retained data on an unrelated turn following a dependency error.
@@ -151,7 +181,9 @@ export class ConversationEngine {
         const result = matchResultSchema.safeParse(await this.#dependencies.matcher.match(state.factors));
         if (!result.success) throw new Error("Invalid identity service result.");
         if (result.data.count === 1 && result.data.patientId !== null) {
-          return finish(transition(state, { type: "match_succeeded", patientId: result.data.patientId }));
+          const matched = transition(state, { type: "match_succeeded", patientId: result.data.patientId });
+          if (context) bindSessionPatient(context, matched);
+          return finishClinical(matched);
         }
         const rejected = transition(state, { type: "match_rejected" });
         return finish(rejected, rejected.phase === "escalated" ? replyFor(rejected)

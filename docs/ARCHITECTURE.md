@@ -1,6 +1,6 @@
 # Prescription-refill architecture
 
-Status: Phase 3 adds the conversation state machine, read-only EHR identity matching, isolated serialized sessions and validated HTTP transport. Phase 2 configuration and Groq interpretation remain in use. Clinical policy, protected patient reads and prescription/pharmacy mutations remain for later phases. Requirements and verification are in REQUIREMENTS.md; phase details are in PHASE2.md and PHASE3.md. Preserve Node HTTP, strict TypeScript and authoritative fixtures.
+Status: Phase 4 adds authenticated clinical reads, grounded medication selection, deterministic clinical policy and a guarded refill domain operation. Production conversation processing stops at pharmacy confirmation; Phase 5 owns pharmacy prompts, directory search and changes. Prior configuration/Groq/authentication/session components remain in use. Requirements and phase records are in REQUIREMENTS.md and PHASE2.md–PHASE4.md. Preserve Node HTTP, strict TypeScript and authoritative fixtures.
 
 ## Components and dependency direction
 
@@ -50,4 +50,4 @@ Pharmacy PUT is value-idempotent but an uncertain result needs readback before p
 
 ## Implementation and verification sequence for a later phase
 
-Phase 3 has completed authenticated conversation intake, read-only matching, session isolation and transport validation. Later phases will implement protected service adapters, pure clinical policy, prescription selection and action/consent gates. Add the mapped tests with each functional change. Run strict typecheck, policy/identity/action failure tests and unchanged conformance against a fresh isolated mock. Test alternate synthetic records rather than relying on seed IDs. Inspect recorded calls for forbidden side effects. Document final submission details in SUBMISSION.md and archive the authentic redacted session transcript before final delivery. Phase 3 does not implement prescription processing or claim submission readiness.
+Phase 4 completes clinical adapters, pure policy, medication selection and the internal consent/action kernel. `patient-clinical.ts` checks active session contexts for every protected operation. Selection revisions and the write ledger bind actions to saved request/pharmacy evidence and preserve uncertain outcomes. Phase 5 must connect explicit pharmacy consent and changes to that kernel. Add mapped tests with each functional change and inspect recorded calls for forbidden side effects. Final submission documentation and authentic redacted transcripts remain later delivery work; Phase 4 does not claim full submission readiness.

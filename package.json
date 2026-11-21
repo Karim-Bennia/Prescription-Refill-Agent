@@ -8,7 +8,7 @@
     "mock": "tsx mock/server.ts",
     "agent": "tsx agent/start.ts",
     "conformance": "tsx conformance/run.ts",
-    "test": "tsx --test tests/config.test.ts tests/llm-client.test.ts tests/runtime.test.ts tests/local-env.test.ts tests/identity.test.ts tests/ehr-client.test.ts tests/conversation-state.test.ts tests/sessions.test.ts tests/transport.test.ts tests/workflow.test.ts tests/auth-integration.test.ts",
+    "test": "tsx --test tests/config.test.ts tests/llm-client.test.ts tests/runtime.test.ts tests/local-env.test.ts tests/identity.test.ts tests/ehr-client.test.ts tests/conversation-state.test.ts tests/sessions.test.ts tests/transport.test.ts tests/workflow.test.ts tests/auth-integration.test.ts tests/policy.test.ts tests/selection.test.ts tests/clinical-ehr.test.ts tests/clinical-workflow.test.ts tests/actions.test.ts tests/clinical-integration.test.ts",
     "typecheck": "tsc --noEmit",
     "smoke:groq": "tsx agent/groq-smoke.ts"
   },
