@@ -1,5 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { requestSchema, replySchema, parseConversationId, type AgentReply } from "./validation.js";
+import type { HttpObservation } from "./observability.js";
 
 export interface TurnHandler {
   handleTurn(conversationId: string, text: string): Promise<AgentReply>;
@@ -7,6 +10,7 @@ export interface TurnHandler {
 
 interface HttpServerOptions {
   bodyTimeoutMs?: number;
+  observe?: (event: HttpObservation) => void | Promise<void>;
 }
 
 const MAX_BODY_BYTES = 16_384;
@@ -72,13 +76,36 @@ export function createAgentServer(handler: TurnHandler, options: HttpServerOptio
   if (!Number.isInteger(bodyTimeoutMs) || bodyTimeoutMs <= 0 || bodyTimeoutMs > 60_000) {
     throw new Error("Invalid HTTP request timeout configuration.");
   }
-  const server = createServer((req, res) => {
+  const server = createServer({
+    // Leave header parsing + the application body timer time to return its JSON error.
+    // The native whole-request fallback must not race that earlier, schema-preserving deadline.
+    requestTimeout: bodyTimeoutMs * 3 + 1000,
+    headersTimeout: bodyTimeoutMs,
+    // Node otherwise scans incomplete headers every 30 seconds, regardless of a shorter deadline.
+    connectionsCheckingInterval: Math.min(1000, bodyTimeoutMs),
+  }, (req, res) => {
+    const requestId = randomUUID();
+    const started = performance.now();
+    let isHealth = false;
+    res.setHeader("x-request-id", requestId);
+    res.once("finish", () => {
+      const status = res.statusCode;
+      const category: HttpObservation["category"] = status === 400 ? "invalid_request"
+        : status === 404 ? "not_found" : status === 405 ? "method_not_allowed"
+        : status === 408 ? "body_timeout" : status === 413 ? "request_too_large"
+        : status >= 500 ? "service_unavailable" : isHealth ? "health" : "conversation";
+      try {
+        void Promise.resolve(options.observe?.({ event: "http_request", requestId, status, category,
+          durationMs: Math.max(0, Math.round(performance.now() - started)) })).catch(() => undefined);
+      } catch { /* Diagnostics must never change the response or expose an observer error. */ }
+    });
     const processRequest = async () => {
       let pathname: string;
       try { pathname = new URL(req.url ?? "/", "http://localhost").pathname; }
       catch { sendJson(res, 400, { error: "invalid request" }); return; }
 
       if (pathname === "/healthz") {
+        isHealth = true;
         if (req.method !== "GET") {
           res.setHeader("allow", "GET");
           sendJson(res, 405, { error: "method not allowed" });
@@ -117,8 +144,6 @@ export function createAgentServer(handler: TurnHandler, options: HttpServerOptio
     };
     void processRequest().catch(() => sendJson(res, 503, { error: "service unavailable" }));
   });
-  server.requestTimeout = bodyTimeoutMs;
-  server.headersTimeout = bodyTimeoutMs;
   server.keepAliveTimeout = 5000;
   return server;
 }

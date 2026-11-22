@@ -38,7 +38,7 @@ export class ConfigurationError extends Error {
 
 const placeholder = /^(?:replace(?:[-_\s]|$)|your(?:[-_\s]|$)|placeholder(?:[-_\s]|$)|change[-_\s]?me$|example$|todo$|<.*>|\$\{.*\})/i;
 const secret = z.string().trim().min(1).max(4096)
-  .refine(value => !/\s/.test(value) && !placeholder.test(value));
+  .refine(value => !/[\s\u0000-\u001f\u007f]/.test(value) && !placeholder.test(value));
 const model = z.string().trim().min(1).max(200)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/);
 

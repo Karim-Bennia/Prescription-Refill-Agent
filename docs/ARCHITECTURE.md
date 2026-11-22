@@ -1,6 +1,6 @@
 # Prescription-refill architecture
 
-Status: Phase 5 completes pharmacy presentation, explicit scoped consent, directory selection, confirmed pharmacy changes and public refill execution through the existing guarded kernel. Prior configuration/Groq/authentication/session/clinical components remain in use. Current implementation and verification are recorded in PHASE5.md; earlier phase records remain historical. Preserve Node HTTP, strict TypeScript and authoritative fixtures.
+Status: Phase 7 reviews and hardens the completed pharmacy/refill workflow with retained-action recovery, receipt-scope checks, truthful expiry responses, bounded HTTP deadlines and privacy-safe request observations. Existing configuration/Groq/authentication/session/clinical components and the sole refill kernel remain in use. Current review and verification are recorded in PHASE7.md; earlier phase records remain historical. Preserve Node HTTP, strict TypeScript and authoritative fixtures.
 
 ## Components and dependency direction
 
@@ -18,7 +18,7 @@ Status: Phase 5 completes pharmacy presentation, explicit scoped consent, direct
 | actions.ts | Revalidate authorization, ownership, clinical result and scoped consent immediately before mutations |
 | ehr-client.ts / pharmacy-client.ts | Fixed configured origins, bearer headers, encoded paths/query, response validation, timeout and read retry policy |
 | llm-client.ts | Groq adapter; structured intent/factor extraction as untrusted proposals |
-| errors.ts / logging.ts | Typed failures, safe patient messages, correlation and reason codes without raw text, demographics or credentials |
+| errors.ts / ehr-errors.ts / observability.ts | Typed failures, safe patient messages and allowlisted HTTP correlation/status metadata without raw text, demographics or credentials |
 
 Keep interfaces narrow (SOLID interface segregation); single responsibilities separate safety from language. Dependency inversion enables fake EHR, deterministic clock responses, fake model and in-memory sessions in tests. Explicit state transitions make illegal action ordering reviewable. Pure policy functions support boundary tables. These patterns serve correctness; no event bus, database, queue, generic agent framework or inheritance hierarchy is needed.
 

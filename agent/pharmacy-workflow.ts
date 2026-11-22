@@ -45,8 +45,15 @@ export class PharmacyWorkflow {
   readonly #changes = new Map<string, ChangeRecord>();
   constructor(readonly reader: PatientClinicalReader, readonly directory: PharmacyService, readonly actions: RefillActions) {}
 
+  async recover(state: ConversationState, context: SessionContext | undefined): Promise<ClinicalProgress | undefined> {
+    const result = await this.actions.recoverRecorded(state, context);
+    return result ? { state: result.state, message: "An earlier refill request has a recorded outcome. " + clinicalReply(result.state), cache: true } : undefined;
+  }
+
   async prepare(state: ConversationState, context: SessionContext | undefined): Promise<ClinicalProgress> {
     if (state.phase !== "awaiting_pharmacy_confirmation") return { state, message: clinicalReply(state), cache: true };
+    const recovered = await this.recover(state, context);
+    if (recovered) return recovered;
     try {
       const current = await this.reader.pharmacy(state, context);
       assertSessionPatient(context, state);
@@ -58,6 +65,8 @@ export class PharmacyWorkflow {
 
   async handle(state: SelectedState, text: string, context: SessionContext | undefined): Promise<ClinicalProgress> {
     assertSessionPatient(context, state);
+    const recovered = await this.recover(state, context);
+    if (recovered) return recovered;
     const command = parsePharmacyCommand(text);
     // Missing/failed presentation cannot turn a free-floating yes into permission.
     if (!state.pharmacyContext) return this.prepare(state, context);

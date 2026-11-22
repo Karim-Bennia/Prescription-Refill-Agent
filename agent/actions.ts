@@ -1,7 +1,7 @@
 import { ClinicalEhrError, type ClinicalEhr } from "./clinical-ehr.js";
 import { refillReceiptSchema, type RefillReceipt } from "./clinical-types.js";
 import { transition, type ConversationState } from "./conversation-state.js";
-import { assertSavedPharmacyPrompt, assertSessionEvidence, assertSessionPatient, sessionSelectionVersion, type SessionContext } from "./sessions.js";
+import { assertSavedPharmacyPrompt, assertSessionEvidence, assertSessionPatient, sessionSelectionVersion, SessionError, type SessionContext } from "./sessions.js";
 import { PatientClinicalReader, assessMedication } from "./patient-clinical.js";
 import { selectMedication } from "./selection.js";
 
@@ -28,6 +28,26 @@ export class RefillActions {
   readonly #reader: PatientClinicalReader;
   readonly #ehr: ClinicalEhr;
   constructor(ehr: ClinicalEhr) { this.#ehr = ehr; this.#reader = new PatientClinicalReader(ehr); }
+
+  /** Restore retained facts before accepting a new intent after an interrupted session commit.
+   * This performs no service operation and does not grant new clinical authorization. */
+  async recoverRecorded(state: ConversationState, context: SessionContext | undefined): Promise<ActionResult | undefined> {
+    const record = context && this.#records.get(context.conversationId);
+    if (!record || record.kind === "confirmed") return undefined;
+    const patientId = assertSessionPatient(context, state);
+    if (record.scope.patientId !== patientId) throw new SessionError("invalid_state");
+    if (record.kind === "pending") {
+      const pending = this.#inflight.get(context!.conversationId);
+      if (pending) return pending;
+    }
+    if (record.kind === "submitted") {
+      return { state: { phase: "refill_submitted", patientId, medId: record.scope.medId,
+        pharmacyId: record.scope.pharmacyId, receipt: record.receipt }, outcome: { kind: "submitted", receipt: record.receipt } };
+    }
+    const kind = record.kind === "rejected" ? "rejected" : "unknown";
+    return { state: transition(state, { type: "clinical_stop", reason: kind === "rejected" ? "refill_rejected" : "refill_unknown", policyReasons: [] }),
+      outcome: { kind } };
+  }
 
   async confirmCurrentPharmacy(
     state: ConversationState, context: SessionContext | undefined, pharmacyId: string,
@@ -58,6 +78,7 @@ export class RefillActions {
     // A terminal receipt is replayable only with this service's retained submission evidence.
     if (state.phase === "refill_submitted" && existing?.kind === "submitted"
       && existing.scope.patientId === state.patientId && existing.scope.medId === state.medId
+      && existing.scope.pharmacyId === state.pharmacyId
       && existing.receipt.refillId === state.receipt.refillId) {
       assertSessionEvidence(context, state.patientId);
       return { state, outcome: { kind: "submitted", receipt: existing.receipt } };

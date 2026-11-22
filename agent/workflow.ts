@@ -63,19 +63,19 @@ function replyFor(state: ConversationState): string {
     case "awaiting_pharmacy_confirmation":
     case "clinical_escalated":
     case "refill_submitted": return clinicalReply(state);
-    case "closed": return "This conversation has been closed at your request. No refill has been submitted.";
+    case "closed": return "This conversation has been closed at your request. No further refill will be submitted in this conversation. Please verify any earlier pending request with your care team.";
     case "escalated":
       switch (state.reason) {
         case "authentication_failed": return "I could not verify your identity after several attempts. Please contact your care team directly. No one has been contacted on your behalf.";
         case "identity_change": return "The verified identity cannot be changed in this conversation. Please start a new conversation to verify different details. No one has been contacted on your behalf.";
-        case "expired": return "This conversation has expired. Please start a new conversation and verify your identity again. No refill has been submitted.";
+        case "expired": return "This conversation has expired. Please start a new conversation and verify your identity again. No further refill will be submitted here; please verify any earlier pending request with your care team.";
         default: { const exhaustive: never = state; return exhaustive; }
       }
     default: { const exhaustive: never = state; return exhaustive; }
   }
 }
 
-/** Orchestrates proposals and read-only matching. This phase exposes no protected reads or writes. */
+/** Coordinates conversation effects; protected operations stay behind session and action guards. */
 export class ConversationEngine {
   readonly #dependencies: Dependencies;
   readonly #replays = new Map<string, Replay>();
@@ -108,6 +108,10 @@ export class ConversationEngine {
       };
       // Terminal/expiry rules take precedence over any cached authenticated response.
       if (isTerminal(current)) return finish(current);
+      if (this.#dependencies.pharmacy && isAuthenticated(current)) {
+        const recovered = await this.#dependencies.pharmacy.recover(current, context);
+        if (recovered) return finish(recovered.state, recovered.message, recovered.cache);
+      }
       const replay = this.#replays.get(conversationId);
       // A failed repository commit must not make an uncommitted reply authoritative.
       if (replay?.digest === digest && replay.stateDigest === stateDigest(current)) {

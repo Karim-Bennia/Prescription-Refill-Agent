@@ -24,6 +24,8 @@ Do not export real provider credentials to the mock. For automated evidence, Pha
 
 `test:coverage` derives its test paths from `npm test`, avoiding a second test list or platform-dependent glob. It uses Node 20's experimental V8 coverage, with no extra dependency. Reported metrics are **line, branch and function** coverage; statement coverage is unavailable from this reporter. Source-map/V8 figures are supporting evidence, not proof of clinical or functional correctness. Native “all files” includes test/support code; selected application modules are reported separately in PHASE6.md. Child-process entry points and platform branches limit interpretation.
 
+Phase 7 adds a separately labelled weighted `application-only-coverage` summary for collected `agent/**/*.ts` files, preserving the native all-files table. The reporter sums covered/total counters per metric and excludes support/dependency/outside paths; it never averages module percentages. Current results are in PHASE7.md. The test list also accepts native `.test.mjs` files for the small coverage utility's own regression tests. Supported-LTS validation remains required; the observed Node 20 host is EOL.
+
 ## Prioritized evaluation gaps
 
 The Phase 5 baseline already had 378 tests covering individual R1–R4 boundaries, runtime schemas, identity binding, medication grounding, pharmacy consent, read retries, single-attempt writes, serialization and failed-commit recovery. Phase 6 adds:
