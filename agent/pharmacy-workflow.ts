@@ -10,6 +10,19 @@ import { assertSavedPharmacyPrompt, assertSessionPatient, sessionSelectionVersio
 type SelectedState = Extract<ConversationState, { phase: "awaiting_pharmacy_confirmation" }>;
 interface ChangeRecord { scope: string; kind: "pending" | "updated" | "unknown" | "rejected" }
 
+function displayedCandidates(records: DirectoryPharmacy[]): DirectoryPharmacy[] {
+  const visible: DirectoryPharmacy[] = [];
+  let length = 0;
+  for (const record of records.slice(0, 10)) {
+    const label = `${visible.length + 1}. ${record.name}, ${record.address}; `;
+    // Reserve headroom for the question and clarification prefixes under replySchema's 4000 chars.
+    if (length + label.length > 3000) break;
+    visible.push(record);
+    length += label.length;
+  }
+  return visible;
+}
+
 export function pharmacyReply(state: SelectedState): string {
   const prompt = state.pharmacyContext;
   if (!prompt) return "Pharmacy information is required before submission. Please retry. No refill has been submitted.";
@@ -111,10 +124,11 @@ export class PharmacyWorkflow {
       if (!parsed.success) throw new ClinicalEhrError("invalid_response");
       assertSessionPatient(context, state);
       // Keep displayed choices bounded and stable so an ordinal cannot select an unseen result.
-      const candidates = parsed.data.slice(0, 10);
+      const candidates = displayedCandidates(parsed.data);
       const next = transition(state, { type: "pharmacy_prompt", context: candidates.length === 1
         ? { stage: "confirm_change", pharmacy: candidates[0] } : { stage: "search", candidates } });
-      return this.#progress(next, candidates.length === 0 ? "No pharmacies matched that search. " : parsed.data.length > 10 ? "Showing the first ten matches; refine your search if needed. " : "");
+      return this.#progress(next, candidates.length === 0 ? "No pharmacies matched that search. "
+        : parsed.data.length > candidates.length ? `Showing the first ${candidates.length} matches; refine your search if needed. ` : "");
     } catch { return this.#unavailable(searching); }
   }
 

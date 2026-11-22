@@ -163,6 +163,12 @@ export class InMemorySessionRepository implements SessionRepository {
       const next = validateUpdate(before, update?.state);
       const committedState = snapshot(next);
       const committedAt = this.#clock();
+      // A caught dependency error must not renew a lease that expired during this turn.
+      // Terminal action evidence can still be retained after an already accepted write.
+      if (!isTerminal(next) && committedAt - entry.lastActivity >= this.#ttlMs) {
+        entry.state = snapshot({ phase: "escalated", reason: "expired" });
+        throw new SessionError("expired");
+      }
       if (selectionKey(before) !== selectionKey(next)) entry.selectionVersion++;
       // Clone before storing so callers cannot mutate retained state after a turn.
       entry.state = committedState;

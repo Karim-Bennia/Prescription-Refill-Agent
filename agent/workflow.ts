@@ -10,7 +10,7 @@ import {
 } from "./identity.js";
 import { interpretMessage } from "./interpretation.js";
 import type { LanguageInterpreter, Interpretation } from "./intent.js";
-import { bindSessionPatient, type SessionRepository, type SessionUpdate } from "./sessions.js";
+import { bindSessionPatient, SessionError, type SessionRepository, type SessionUpdate } from "./sessions.js";
 import { InputValidationError, requestSchema, type AgentReply } from "./validation.js";
 import { clinicalReply, type PrescriptionWorkflow } from "./clinical-workflow.js";
 import { pharmacyReply, type PharmacyWorkflow } from "./pharmacy-workflow.js";
@@ -134,7 +134,8 @@ export class ConversationEngine {
         if (current.phase === "awaiting_pharmacy_confirmation" && this.#dependencies.pharmacy && !directRequest) {
           // Only a pending pharmacy question can consume affirmative consent. Medication corrections
           // invalidate the entire selection and are re-evaluated by the clinical workflow below.
-          const pharmacyTurn = /\b(?:pharmacy|pharmacies|location|street|avenue|address)\b|\?|^(?:yes|no|ok|okay|use\b|the\b|retry\b|try again\b|\d+\b)/i.test(text)
+          const pharmacyTurn = parsePharmacyCommand(text).kind !== "other"
+            || /\b(?:pharmacy|pharmacies|location|street|avenue|address)\b|\?|^(?:yes|no|ok|okay|use\b|the\b|retry\b|try again\b|\d+\b)/i.test(text)
             || current.pharmacyContext?.stage === "search";
           if (pharmacyTurn) {
             const progress = await this.#dependencies.pharmacy.handle(current, text, context);
@@ -214,6 +215,12 @@ export class ConversationEngine {
         return finish(transition(state, { type: "verification_unavailable" }),
           "Identity verification is temporarily unavailable. Please retry; no identity has been verified.", false);
       }
+    }).catch((error: unknown) => {
+      if (!(error instanceof SessionError) || error.code !== "expired") throw error;
+      this.#replays.delete(conversationId);
+      const expired: ConversationState = { phase: "escalated", reason: "expired" };
+      const reply: AgentReply = { messages: [{ from: "agent", text: replyFor(expired) }], state: "escalated" };
+      return reply;
     });
   }
 }

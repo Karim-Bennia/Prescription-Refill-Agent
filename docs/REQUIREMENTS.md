@@ -114,3 +114,7 @@ Earlier phase limitations above are historical. Phase 4 implements the clinical 
 ## Phase 5 verification
 
 Earlier phase limitations above are historical. Public pharmacy and refill requirements are implemented as marked in the matrix. See PHASE5.md for exact APIs, consent/state invariants, executed verification, call counts and remaining limitations. All prior regression tests remain unchanged. No push or Phase 6 work is included.
+
+## Phase 6 evaluation
+
+Phase 6 adds a requirement-to-unit/service/HTTP coverage matrix in TESTING.md and measured evidence in PHASE6.md. Final `npm test` and native coverage runs each passed 429 cases with zero failures/skips; all original 378 cases remain unchanged. TypeScript and unchanged conformance passed. Generated clinical boundaries, adversarial inputs, provider faults, corrected conversations, concurrency, actual process restart and bounded local workload were evaluated. Three reproduced defects were fixed: expired-turn renewal, oversized directory replies with undisplayed saved choices, and supported confirmation routing. Restart/global idempotency, caller ownership, upstream atomicity, live-model accuracy and historical credential exposure remain explicitly limited or blocked. No push or Phase 7/8 work was performed.
