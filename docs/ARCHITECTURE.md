@@ -1,6 +1,6 @@
 # Prescription-refill architecture
 
-Status: Phase 4 adds authenticated clinical reads, grounded medication selection, deterministic clinical policy and a guarded refill domain operation. Production conversation processing stops at pharmacy confirmation; Phase 5 owns pharmacy prompts, directory search and changes. Prior configuration/Groq/authentication/session components remain in use. Requirements and phase records are in REQUIREMENTS.md and PHASE2.md–PHASE4.md. Preserve Node HTTP, strict TypeScript and authoritative fixtures.
+Status: Phase 5 completes pharmacy presentation, explicit scoped consent, directory selection, confirmed pharmacy changes and public refill execution through the existing guarded kernel. Prior configuration/Groq/authentication/session/clinical components remain in use. Current implementation and verification are recorded in PHASE5.md; earlier phase records remain historical. Preserve Node HTTP, strict TypeScript and authoritative fixtures.
 
 ## Components and dependency direction
 

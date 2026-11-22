@@ -62,23 +62,30 @@ const identifierSchema = z.string().min(1).max(200)
 const labTypeSchema = z.string().min(1).max(100)
   .refine(value => value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value))
   .refine(value => { try { encodeURIComponent(value); return true; } catch { return false; } });
+const directoryQuerySchema = z.string().max(200)
+  .refine(value => value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value))
+  .refine(value => { try { encodeURIComponent(value); return true; } catch { return false; } });
 
 const operationSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("time") }),
   z.strictObject({ kind: z.literal("medications"), patientId: identifierSchema }),
   z.strictObject({ kind: z.literal("labs"), patientId: identifierSchema, type: labTypeSchema }),
   z.strictObject({ kind: z.literal("pharmacy"), patientId: identifierSchema }),
+  z.strictObject({ kind: z.literal("directory"), query: directoryQuerySchema }),
+  z.strictObject({ kind: z.literal("pharmacy_update"), patientId: identifierSchema, pharmacyId: identifierSchema }),
   z.strictObject({ kind: z.literal("refill"), patientId: identifierSchema, medId: identifierSchema }),
 ]);
 export type ClinicalOperation = z.infer<typeof operationSchema>;
 
 function requestDetails(operation: ClinicalOperation): { path: string; body?: string } {
   if (operation.kind === "time") return { path: "/ehr/time" };
+  if (operation.kind === "directory") return { path: `/pharmacy/directory?q=${encodeURIComponent(operation.query)}` };
   const prefix = `/ehr/patients/${encodeURIComponent(operation.patientId)}`;
   switch (operation.kind) {
     case "medications": return { path: `${prefix}/medications` };
     case "labs": return { path: `${prefix}/labs?type=${encodeURIComponent(operation.type)}` };
     case "pharmacy": return { path: `${prefix}/pharmacy` };
+    case "pharmacy_update": return { path: `${prefix}/pharmacy`, body: JSON.stringify({ pharmacyId: operation.pharmacyId }) };
     case "refill": return { path: `${prefix}/refills`, body: JSON.stringify({ medId: operation.medId }) };
   }
 }
@@ -138,7 +145,7 @@ export class ClinicalHttpTransport {
   async execute(operation: ClinicalOperation): Promise<unknown> {
     const parsed = operationSchema.safeParse(operation);
     if (!parsed.success) throw new ClinicalEhrError("invalid_request");
-    const write = parsed.data.kind === "refill";
+    const write = parsed.data.kind === "refill" || parsed.data.kind === "pharmacy_update";
     for (let attempt = 0; ; attempt++) {
       try { return await this.#attempt(parsed.data); }
       catch (error) {
@@ -157,7 +164,7 @@ export class ClinicalHttpTransport {
   }
 
   async #attempt(operation: ClinicalOperation): Promise<unknown> {
-    const write = operation.kind === "refill";
+    const write = operation.kind === "refill" || operation.kind === "pharmacy_update";
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {
@@ -172,7 +179,7 @@ export class ClinicalHttpTransport {
         const headers: Record<string, string> = { authorization: `Bearer ${this.#config.apiKey}` };
         if (write) headers["content-type"] = "application/json";
         const response = await this.#fetch(`${this.#config.baseUrl}${path}`, {
-          method: write ? "POST" : "GET", headers, body,
+          method: operation.kind === "pharmacy_update" ? "PUT" : write ? "POST" : "GET", headers, body,
           redirect: "error", cache: "no-store", signal: controller.signal,
         });
         if (!response.ok) {

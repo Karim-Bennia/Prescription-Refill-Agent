@@ -8,6 +8,8 @@ import { HttpClinicalEhr, type ClinicalEhr } from "./clinical-ehr.js";
 import { PatientClinicalReader } from "./patient-clinical.js";
 import { PrescriptionWorkflow } from "./clinical-workflow.js";
 import { RefillActions } from "./actions.js";
+import { HttpPharmacyService, type PharmacyService } from "./pharmacy-client.js";
+import { PharmacyWorkflow } from "./pharmacy-workflow.js";
 
 export interface Runtime {
   readonly config: AppConfig;
@@ -16,11 +18,13 @@ export interface Runtime {
   readonly actions: RefillActions;
 }
 
+interface RuntimeOverrides { matcher?: IdentityMatcher; sessions?: SessionRepository; ehr?: ClinicalEhr; pharmacy?: PharmacyService }
+
 // The composition root is the only place selecting a concrete language provider.
 export function createRuntime(
   environment: Readonly<Record<string, string | undefined>>,
   interpreter?: LanguageInterpreter,
-  overrides: { matcher?: IdentityMatcher; sessions?: SessionRepository; ehr?: ClinicalEhr } = {},
+  overrides: RuntimeOverrides = {},
 ): Runtime {
   const config = loadConfig(environment);
   const language = interpreter ?? new GroqLanguageInterpreter(config.groq);
@@ -30,9 +34,24 @@ export function createRuntime(
   });
   const ehr = overrides.ehr ?? new HttpClinicalEhr({ baseUrl: config.backend.ehrBaseUrl,
     apiKey: config.backend.ehrApiKey, timeoutMs: config.groq.timeoutMs, maxRetries: 1 });
+  const actions = new RefillActions(ehr);
+  const reader = new PatientClinicalReader(ehr);
   const engine = new ConversationEngine({
     matcher, interpreter: language, sessions: overrides.sessions ?? new InMemorySessionRepository(),
-    clinical: new PrescriptionWorkflow(new PatientClinicalReader(ehr)),
+    clinical: new PrescriptionWorkflow(reader),
+    pharmacy: overrides.pharmacy ? new PharmacyWorkflow(reader, overrides.pharmacy, actions) : undefined,
   });
-  return Object.freeze({ config, interpreter: language, engine, actions: new RefillActions(ehr) });
+  return Object.freeze({ config, interpreter: language, engine, actions });
+}
+
+/** Complete executable composition. The clinical core factory remains useful for isolated tests. */
+export function createApplicationRuntime(
+  environment: Readonly<Record<string, string | undefined>>,
+  interpreter?: LanguageInterpreter,
+  overrides: RuntimeOverrides = {},
+): Runtime {
+  const config = loadConfig(environment);
+  const pharmacy = overrides.pharmacy ?? new HttpPharmacyService({ ...config.backend,
+    timeoutMs: config.groq.timeoutMs, maxRetries: 1 });
+  return createRuntime(environment, interpreter, { ...overrides, pharmacy });
 }

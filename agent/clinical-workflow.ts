@@ -30,6 +30,8 @@ export function clinicalReply(state: ConversationState): string {
     case "awaiting_pharmacy_confirmation":
       return `${state.medicationName} passed the documented clinical checks. Pharmacy identity and confirmation are still required before submission. No refill has been submitted.`;
     case "clinical_escalated":
+      if (state.reason === "pharmacy_unknown") return "The pharmacy change outcome could not be verified. Do not repeat the change; please contact your care team to verify the destination. No refill has been submitted.";
+      if (state.reason === "pharmacy_rejected") return "The service did not confirm the pharmacy change. Please contact your care team. No refill has been submitted.";
       if (state.reason === "refill_unknown") return "The refill submission outcome is unknown. Do not submit it again; please contact your care team to verify it. No successful submission is being claimed.";
       if (state.reason === "refill_rejected") return "The service did not confirm submission of this refill. Please contact your care team. No successful submission is being claimed.";
       if (state.reason === "no_prescriptions") return "No prescriptions were returned for your verified record. Please contact your care team. No refill has been submitted and no one has been contacted on your behalf.";

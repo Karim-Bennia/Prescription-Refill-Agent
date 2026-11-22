@@ -1,7 +1,7 @@
 import { ClinicalEhrError, type ClinicalEhr } from "./clinical-ehr.js";
 import { refillReceiptSchema, type RefillReceipt } from "./clinical-types.js";
 import { transition, type ConversationState } from "./conversation-state.js";
-import { assertSessionEvidence, assertSessionPatient, sessionSelectionVersion, type SessionContext } from "./sessions.js";
+import { assertSavedPharmacyPrompt, assertSessionEvidence, assertSessionPatient, sessionSelectionVersion, type SessionContext } from "./sessions.js";
 import { PatientClinicalReader, assessMedication } from "./patient-clinical.js";
 import { selectMedication } from "./selection.js";
 
@@ -21,7 +21,7 @@ function sameScope(first: Scope, second: Scope): boolean {
     && first.medicationName === second.medicationName && first.revision === second.revision;
 }
 
-/** No HTTP route calls confirmation/submission in Phase 4. Phase 5 supplies the consent UI. */
+/** Final refill authorization boundary; the conversation layer cannot submit directly to EHR. */
 export class RefillActions {
   readonly #records = new Map<string, Record>();
   readonly #inflight = new Map<string, Promise<ActionResult>>();
@@ -34,6 +34,10 @@ export class RefillActions {
   ): Promise<boolean> {
     const patientId = assertSessionPatient(context, state);
     if (state.phase !== "awaiting_pharmacy_confirmation") return false;
+    if (state.pharmacyContext) {
+      assertSavedPharmacyPrompt(context, state);
+      if (state.pharmacyContext.stage !== "confirm_current" || state.pharmacyContext.pharmacy.pharmacyId !== pharmacyId) return false;
+    }
     const revision = sessionSelectionVersion(context, state);
     if (revision === undefined) return false;
     const existing = this.#records.get(context!.conversationId);
@@ -60,6 +64,10 @@ export class RefillActions {
     }
     const patientId = assertSessionPatient(context, state);
     if (state.phase !== "awaiting_pharmacy_confirmation") return { state, outcome: { kind: "blocked", reason: "invalid_context" } };
+    if (state.pharmacyContext) {
+      assertSavedPharmacyPrompt(context, state);
+      if (state.pharmacyContext.stage !== "confirm_current") return { state, outcome: { kind: "blocked", reason: "invalid_context" } };
+    }
     const revision = sessionSelectionVersion(context, state);
     if (revision === undefined) return { state, outcome: { kind: "blocked", reason: "invalid_context" } };
     if (!existing) return { state, outcome: { kind: "blocked", reason: "pharmacy_confirmation_required" } };

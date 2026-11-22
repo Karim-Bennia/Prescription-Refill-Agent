@@ -17,7 +17,7 @@ export interface SessionUpdate<T> { readonly state: ConversationState; readonly 
 export interface SessionContext { readonly conversationId: string }
 interface SavedSelection { medId: string; name: string; query: string }
 interface ContextRecord { assertActive: () => void; patientId?: string; bindingAllowed: boolean;
-  selection?: SavedSelection; selectionVersion: number }
+  selection?: SavedSelection; selectionVersion: number; pharmacyPrompt?: string }
 const activeContexts = new WeakMap<SessionContext, ContextRecord>();
 
 function contextRecord(context: SessionContext | undefined): ContextRecord {
@@ -56,8 +56,18 @@ export function sessionSelectionVersion(context: SessionContext | undefined, sta
   assertSessionPatient(context, state);
   if (state.phase !== "awaiting_pharmacy_confirmation" || !record.selection
     || record.selection.medId !== state.medId || record.selection.name !== state.medicationName
-    || record.selection.query !== state.request.medicationQuery) return undefined;
+    || record.selection.query !== state.request.medicationQuery
+    || record.pharmacyPrompt !== (state.pharmacyContext ? JSON.stringify(state.pharmacyContext) : undefined)) return undefined;
   return record.selectionVersion;
+}
+
+/** A pharmacy mutation/confirmation must answer the question actually saved before this turn. */
+export function assertSavedPharmacyPrompt(context: SessionContext | undefined, state: ConversationState): void {
+  const record = contextRecord(context);
+  if (sessionSelectionVersion(context, state) === undefined || state.phase !== "awaiting_pharmacy_confirmation"
+    || !state.pharmacyContext || record.pharmacyPrompt !== JSON.stringify(state.pharmacyContext)) {
+    throw new SessionError("invalid_state");
+  }
 }
 export interface SessionRepository {
   run<T>(conversationId: string, operation: (state: ConversationState, context?: SessionContext) => Promise<SessionUpdate<T>>): Promise<T>;
@@ -73,7 +83,7 @@ interface Entry { state: ConversationState; lastActivity: number; selectionVersi
 function selectionKey(state: ConversationState): string {
   return isAuthenticated(state) ? JSON.stringify({ patientId: state.patientId,
     request: state.request, selected: state.phase === "awaiting_pharmacy_confirmation"
-      ? [state.medId, state.medicationName] : null }) : state.phase;
+      ? [state.medId, state.medicationName, state.pharmacyContext ?? null] : null }) : state.phase;
 }
 
 function snapshot(state: ConversationState): ConversationState {
@@ -145,6 +155,8 @@ export class InMemorySessionRepository implements SessionRepository {
         selection: before.phase === "awaiting_pharmacy_confirmation"
           ? { medId: before.medId, name: before.medicationName, query: before.request.medicationQuery } : undefined,
         selectionVersion: entry.selectionVersion,
+        pharmacyPrompt: before.phase === "awaiting_pharmacy_confirmation" && before.pharmacyContext
+          ? JSON.stringify(before.pharmacyContext) : undefined,
         assertActive: () => { if (this.#clock() - entry.lastActivity >= this.#ttlMs || isTerminal(entry.state)) throw new SessionError("expired"); },
       });
       const update = await operation(before, context);

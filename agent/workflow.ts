@@ -13,12 +13,15 @@ import type { LanguageInterpreter, Interpretation } from "./intent.js";
 import { bindSessionPatient, type SessionRepository, type SessionUpdate } from "./sessions.js";
 import { InputValidationError, requestSchema, type AgentReply } from "./validation.js";
 import { clinicalReply, type PrescriptionWorkflow } from "./clinical-workflow.js";
+import { pharmacyReply, type PharmacyWorkflow } from "./pharmacy-workflow.js";
+import { parsePharmacyCommand } from "./pharmacy-selection.js";
 
 interface Dependencies {
   readonly matcher: IdentityMatcher;
   readonly interpreter: LanguageInterpreter;
   readonly sessions: SessionRepository;
   readonly clinical?: PrescriptionWorkflow;
+  readonly pharmacy?: PharmacyWorkflow;
 }
 interface Replay { digest: string; stateDigest: string; reply: AgentReply }
 
@@ -97,6 +100,10 @@ export class ConversationEngine {
       const finishClinical = async (state: ConversationState): Promise<SessionUpdate<AgentReply>> => {
         if (!this.#dependencies.clinical || !isAuthenticated(state)) return finish(state);
         const progress = await this.#dependencies.clinical.advance(state, context);
+        if (this.#dependencies.pharmacy && progress.state.phase === "awaiting_pharmacy_confirmation") {
+          const pharmacy = await this.#dependencies.pharmacy.prepare(progress.state, context);
+          return finish(pharmacy.state, pharmacy.message, pharmacy.cache);
+        }
         return finish(progress.state, progress.message, progress.cache);
       };
       // Terminal/expiry rules take precedence over any cached authenticated response.
@@ -116,13 +123,28 @@ export class ConversationEngine {
       const direct = isSimple(text) || isRetry(text) ? {} : extractIdentityFactors(text,
         current.phase === "collecting_identity" ? current.factors : {});
       const directRequest = refillRequest(text);
-      if (isAuthenticated(current) && (Object.keys(direct).length > 0 || mentionsIdentitySwitch(text))) {
+      const pharmacyLocation = current.phase === "awaiting_pharmacy_confirmation" && this.#dependencies.pharmacy
+        && Object.keys(direct).every(key => key === "zip")
+        && (parsePharmacyCommand(text).kind === "change"
+          || current.pharmacyContext?.stage === "search" && /^\d{5}(?:-\d{4})?$/.test(text.trim()));
+      if (isAuthenticated(current) && (Object.keys(direct).length > 0 && !pharmacyLocation || mentionsIdentitySwitch(text))) {
         return finish(transition(current, { type: "identity_change" }));
       }
       if (current.phase === "medication_clarification" || current.phase === "awaiting_pharmacy_confirmation") {
-        // Phase 5 owns the actual pharmacy prompt/confirmation flow. A generic yes cannot authorize a write.
+        if (current.phase === "awaiting_pharmacy_confirmation" && this.#dependencies.pharmacy && !directRequest) {
+          // Only a pending pharmacy question can consume affirmative consent. Medication corrections
+          // invalidate the entire selection and are re-evaluated by the clinical workflow below.
+          const pharmacyTurn = /\b(?:pharmacy|pharmacies|location|street|avenue|address)\b|\?|^(?:yes|no|ok|okay|use\b|the\b|retry\b|try again\b|\d+\b)/i.test(text)
+            || current.pharmacyContext?.stage === "search";
+          if (pharmacyTurn) {
+            const progress = await this.#dependencies.pharmacy.handle(current, text, context);
+            return finish(progress.state, progress.message, progress.cache);
+          }
+        }
+        // Clinical-only injected compositions have no public write/consent capability.
         if (current.phase === "awaiting_pharmacy_confirmation" && !directRequest
-          && (isSimple(text) || /\bpharmacy\b/i.test(text))) return finish(current);
+          && (isSimple(text) || /\bpharmacy\b/i.test(text))) return finish(current,
+            current.pharmacyContext ? pharmacyReply(current) : replyFor(current));
         if (isSimple(text)) return finish(current);
         const query = directRequest ? directRequest.medicationQuery
           : isRetry(text) ? current.request?.medicationQuery ?? null : text.length <= 200 ? text : null;

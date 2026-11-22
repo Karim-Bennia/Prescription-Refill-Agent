@@ -2,6 +2,7 @@ import { z } from "zod";
 import { hasRequiredIdentity, identityFactorsSchema } from "./identity.js";
 import { refillReceiptSchema } from "./clinical-types.js";
 import { policyReasonSchema } from "./policy.js";
+import { pharmacyContextSchema } from "./pharmacy-state.js";
 
 export const MAX_AUTH_ATTEMPTS = 5;
 
@@ -39,10 +40,11 @@ export const conversationStateSchema = z.discriminatedUnion("phase", [
   z.strictObject({
     phase: z.literal("awaiting_pharmacy_confirmation"), patientId: patientIdSchema,
     request: selectedRequestSchema, medId: z.string().min(1).max(200), medicationName: z.string().min(1).max(300),
+    pharmacyContext: pharmacyContextSchema.optional(),
   }),
   z.strictObject({
     phase: z.literal("clinical_escalated"), patientId: patientIdSchema,
-    reason: z.enum(["policy_blocked", "invalid_data", "no_prescriptions", "refill_unknown", "refill_rejected"]),
+    reason: z.enum(["policy_blocked", "invalid_data", "no_prescriptions", "refill_unknown", "refill_rejected", "pharmacy_unknown", "pharmacy_rejected"]),
     policyReasons: z.array(policyReasonSchema).max(6),
   }),
   z.strictObject({
@@ -68,9 +70,10 @@ const eventSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("identity_change") }),
   z.strictObject({ type: z.literal("medication_clarification"), request: refillRequestSchema.nullable(), candidates: z.array(candidateSchema).max(1000) }),
   z.strictObject({ type: z.literal("prescription_eligible"), request: selectedRequestSchema, medId: z.string().min(1).max(200), medicationName: z.string().min(1).max(300) }),
+  z.strictObject({ type: z.literal("pharmacy_prompt"), context: pharmacyContextSchema }),
   z.strictObject({
     type: z.literal("clinical_stop"),
-    reason: z.enum(["policy_blocked", "invalid_data", "no_prescriptions", "refill_unknown", "refill_rejected"]),
+    reason: z.enum(["policy_blocked", "invalid_data", "no_prescriptions", "refill_unknown", "refill_rejected", "pharmacy_unknown", "pharmacy_rejected"]),
     policyReasons: z.array(policyReasonSchema).max(6),
   }),
   z.strictObject({ type: z.literal("refill_submitted"), pharmacyId: z.string().min(1).max(200), receipt: refillReceiptSchema }),
@@ -186,6 +189,9 @@ export function transition(state: ConversationState, event: ConversationEvent): 
     case "clinical_stop":
       if (!isAuthenticated(current)) throw new InvalidTransitionError();
       return { phase: "clinical_escalated", patientId: current.patientId, reason: input.reason, policyReasons: input.policyReasons };
+    case "pharmacy_prompt":
+      if (current.phase !== "awaiting_pharmacy_confirmation") throw new InvalidTransitionError();
+      return { ...current, pharmacyContext: input.context };
     case "refill_submitted":
       if (current.phase !== "awaiting_pharmacy_confirmation") throw new InvalidTransitionError();
       return { phase: "refill_submitted", patientId: current.patientId, medId: current.medId,
