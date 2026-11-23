@@ -8,10 +8,11 @@
     "mock": "tsx mock/server.ts",
     "agent": "tsx agent/start.ts",
     "conformance": "tsx conformance/run.ts",
-    "test": "tsx --test tests/config.test.ts tests/llm-client.test.ts tests/runtime.test.ts tests/local-env.test.ts tests/identity.test.ts tests/ehr-client.test.ts tests/conversation-state.test.ts tests/sessions.test.ts tests/transport.test.ts tests/workflow.test.ts tests/auth-integration.test.ts tests/policy.test.ts tests/selection.test.ts tests/clinical-ehr.test.ts tests/clinical-workflow.test.ts tests/actions.test.ts tests/clinical-integration.test.ts tests/pharmacy-client.test.ts tests/pharmacy-selection.test.ts tests/pharmacy-workflow.test.ts tests/pharmacy-integration.test.ts tests/evaluation-policy.test.ts tests/evaluation-security.test.ts tests/evaluation-language.test.ts tests/evaluation-resilience.test.ts tests/evaluation-conversations.test.ts tests/hardening-actions.test.ts tests/hardening-sessions.test.ts tests/hardening-transport.test.ts tests/hardening-observability.test.ts tests/hardening-coverage.test.mjs tests/hardening-startup.test.ts",
+    "test": "tsx --test tests/config.test.ts tests/llm-client.test.ts tests/runtime.test.ts tests/local-env.test.ts tests/identity.test.ts tests/ehr-client.test.ts tests/conversation-state.test.ts tests/sessions.test.ts tests/transport.test.ts tests/workflow.test.ts tests/auth-integration.test.ts tests/policy.test.ts tests/selection.test.ts tests/clinical-ehr.test.ts tests/clinical-workflow.test.ts tests/actions.test.ts tests/clinical-integration.test.ts tests/pharmacy-client.test.ts tests/pharmacy-selection.test.ts tests/pharmacy-workflow.test.ts tests/pharmacy-integration.test.ts tests/evaluation-policy.test.ts tests/evaluation-security.test.ts tests/evaluation-language.test.ts tests/evaluation-resilience.test.ts tests/evaluation-conversations.test.ts tests/hardening-actions.test.ts tests/hardening-sessions.test.ts tests/hardening-transport.test.ts tests/hardening-observability.test.ts tests/hardening-coverage.test.mjs tests/hardening-startup.test.ts tests/live-observer.test.ts tests/live-scenarios.test.ts tests/live-runner.test.ts tests/live-report.test.ts tests/live-cli.test.ts tests/live-validation.test.ts",
     "typecheck": "tsc --noEmit",
     "test:coverage": "node scripts/test-coverage.mjs",
-    "smoke:groq": "tsx agent/groq-smoke.ts"
+    "smoke:groq": "tsx agent/groq-smoke.ts",
+    "eval:live": "tsx evaluation/live.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

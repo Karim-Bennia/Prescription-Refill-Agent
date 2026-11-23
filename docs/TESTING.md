@@ -28,6 +28,8 @@ Phase 7 adds a separately labelled weighted `application-only-coverage` summary 
 
 ## Prioritized evaluation gaps
 
+Phase 8 validates the suite on isolated Node 24 LTS and adds optional `npm run eval:live -- --list` planning plus a rotation-gated live harness. Routine tests still use fake model implementations and isolated synthetic services. Node 24's native default coverage exclusions can match a checkout parent named `test`; the coverage runner now explicitly excludes dependencies where that flag is supported, and a subprocess regression requires actual source collection. The separately weighted application summary remains authoritative for application coverage; an empty native “100%” table is unmeasured. After owner-confirmed credential rotation, actual Groq evaluation passed twelve bounded HTTP/mock scenarios; supplied intent labels matched on 13/13 calls across eight distinct prompts. PHASE8.md and its sanitized JSON evidence separate those observations from final 504-test offline runs and remaining generalization/failure gaps. HTTP 200 refusals/timeouts and missing-model metadata now fail provider evaluation even if the application later recovers deterministically.
+
 The Phase 5 baseline already had 378 tests covering individual R1–R4 boundaries, runtime schemas, identity binding, medication grounding, pharmacy consent, read retries, single-attempt writes, serialization and failed-commit recovery. Phase 6 adds:
 
 | Priority | Gap / purpose | Evaluation |
@@ -63,7 +65,7 @@ The Phase 5 baseline already had 378 tests covering individual R1–R4 boundarie
 | S1 hostile text and secret handling | deterministic guards/adapters | strict schemas, redaction tests | synthetic tokens only | patient/model/record attack corpora | Partially verified: bounded synthetic adversarial cases |
 | Durable/global idempotency and atomic eligibility | upstream API plus local ledgers | per-session safeguards verified | restart and same-patient independent sessions demonstrate loss | repeat after reauthentication can write again | Blocked by external limitations; no upstream idempotency/transaction |
 | Production caller ownership | absent caller-principal contract | session-bound patient checks verified | no caller token API exists | reused routing ID requires production ownership layer | Blocked by external limitations |
-| Real Groq accuracy/robustness | existing Groq adapter | offline validation and faults only | no live request | comprehensive live evaluation reserved for Phase 8 | Not yet verified; compromised historical credential cannot be reused |
+| Real Groq accuracy/robustness | existing Groq adapter | offline validation/faults plus live reporting regressions | 13 actual Groq calls after confirmed rotation | twelve real HTTP/mock scenarios; actual responses, receipt/pharmacy evidence | Partially verified: 13/13 labeled intent matches, eight distinct prompts; broad generalization and real-provider fault recovery unmeasured. See PHASE8.md. |
 
 ## Test methodology and quality
 

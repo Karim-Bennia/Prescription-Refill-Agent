@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { nativeCoverageExclusions } from "./coverage-reporter.mjs";
 
 // The ordinary test command remains the single source of truth for test discovery on Windows.
 const root = new URL("../", import.meta.url);
@@ -13,7 +14,7 @@ if (!files.length || !files.every(file => /^tests\/[A-Za-z0-9.-]+\.test\.(?:ts|m
 }
 // An absolute Windows drive path is not a valid ESM specifier; a file URL works on all hosts.
 const reporter = new URL("scripts/coverage-reporter.mjs", root).href;
-const child = spawn(process.execPath, ["--import", "tsx", "--test", "--experimental-test-coverage", `--test-reporter=${reporter}`, ...files], {
+const child = spawn(process.execPath, ["--import", "tsx", "--test", "--experimental-test-coverage", ...nativeCoverageExclusions(), `--test-reporter=${reporter}`, ...files], {
   cwd: fileURLToPath(root), stdio: "inherit", windowsHide: true,
 });
 child.once("error", () => { console.error("Coverage runner failed to start."); process.exitCode = 1; });

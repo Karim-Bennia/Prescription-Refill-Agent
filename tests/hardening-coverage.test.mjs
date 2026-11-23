@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { resolve, join } from "node:path";
-import { summarizeApplicationCoverage } from "../scripts/coverage-reporter.mjs";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+import { nativeCoverageExclusions, summarizeApplicationCoverage } from "../scripts/coverage-reporter.mjs";
 
 const root = resolve("synthetic-coverage-root");
 const record = (path, covered, total) => ({ path,
@@ -44,4 +50,31 @@ test("empty coverage stays unmeasured and invalid native counters cannot fabrica
     record(join(root, "agent", "bad.ts"), NaN, 1)]) {
     assert.throws(() => summarizeApplicationCoverage([bad], root), /Invalid native coverage counters/);
   }
+});
+
+test("native coverage collects application sources beneath a directory named test", async t => {
+  // Arrange: Node 24's default test-path coverage exclusion also matches checkout parents named test.
+  const fixture = await mkdtemp(join(tmpdir(), "artera-native-coverage-"));
+  assert.ok(resolve(fixture).startsWith(`${resolve(tmpdir())}\\`) || resolve(fixture).startsWith(`${resolve(tmpdir())}/`));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const project = join(fixture, "test", "project");
+  await mkdir(join(project, "agent"), { recursive: true }); await mkdir(join(project, "tests"), { recursive: true });
+  const source = join(project, "agent", "sample.ts");
+  const target = join(project, "tests", "sample.test.mjs");
+  const reporter = join(project, "reporter.mjs");
+  await writeFile(source, "export const sample = () => 42;\n");
+  await writeFile(target, "import { test } from 'node:test'; import assert from 'node:assert/strict'; import { sample } from '../agent/sample.ts'; test('sample', () => assert.equal(sample(), 42));\n");
+  await writeFile(reporter, "export default async function* (events) { for await (const event of events) if (event.type === 'test:coverage') yield JSON.stringify(event.data.summary.files.map(file => ({path:file.path,lines:file.totalLineCount}))) + '\\n'; }\n");
+  // Act: the native reporter, not manufactured counter fixtures, must observe the imported application file.
+  const environment = {};
+  for (const name of ["SystemRoot", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP", "ComSpec"]) {
+    if (process.env[name]) environment[name] = process.env[name];
+  }
+  // Do not inherit NODE_TEST_CONTEXT: the independently launched native runner is not a worker of this test.
+  const loader = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
+  const { stdout } = await promisify(execFile)(process.execPath, ["--import", loader, "--test", "--experimental-test-coverage", ...nativeCoverageExclusions(),
+    `--test-reporter=${pathToFileURL(reporter).href}`, target], { cwd: project, env: environment, windowsHide: true, maxBuffer: 1_048_576 });
+  // Assert
+  const files = JSON.parse(stdout.trim());
+  assert.ok(files.some(file => resolve(file.path) === resolve(source) && file.lines > 0), "Native coverage silently excluded application code under a parent named test.");
 });

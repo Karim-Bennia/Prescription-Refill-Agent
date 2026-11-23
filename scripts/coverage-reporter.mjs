@@ -5,6 +5,13 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const excludedDirectories = new Set(["tests", "mock", "scripts", "node_modules"]);
 
+/** Node 22.5+ excludes paths matching test directories by default, including checkout parents.
+ * An explicit dependency exclusion restores collection; application-only filtering remains below. */
+export function nativeCoverageExclusions() {
+  return process.allowedNodeEnvironmentFlags.has("--test-coverage-exclude")
+    ? ["--test-coverage-exclude=**/node_modules/**"] : [];
+}
+
 function isApplicationFile(path, root) {
   if (typeof path !== "string" || !isAbsolute(path)) return false;
   const withinRepository = relative(root, resolve(path));
