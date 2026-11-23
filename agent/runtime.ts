@@ -21,6 +21,7 @@ export interface Runtime {
 interface RuntimeOverrides { matcher?: IdentityMatcher; sessions?: SessionRepository; ehr?: ClinicalEhr; pharmacy?: PharmacyService }
 
 // The composition root is the only place selecting a concrete language provider.
+/** Compose configuration, language interpretation and guarded clinical workflow dependencies. */
 export function createRuntime(
   environment: Readonly<Record<string, string | undefined>>,
   interpreter?: LanguageInterpreter,
@@ -44,7 +45,8 @@ export function createRuntime(
   return Object.freeze({ config, interpreter: language, engine, actions });
 }
 
-/** Complete executable composition. The clinical core factory remains useful for isolated tests. */
+// The clinical core factory remains useful for isolated tests.
+/** Compose the executable agent with pharmacy integration and injectable workflow dependencies. */
 export function createApplicationRuntime(
   environment: Readonly<Record<string, string | undefined>>,
   interpreter?: LanguageInterpreter,

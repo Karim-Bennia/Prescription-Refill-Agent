@@ -21,6 +21,7 @@ const REASONS: Record<PolicyReason, string> = {
   invalid_clinical_data: "Required clinical information is missing or inconsistent, so I cannot safely evaluate this prescription. Please contact your care team.",
 };
 
+/** Describe validated clinical state without inventing submission, dispensing or handoff success. */
 export function clinicalReply(state: ConversationState): string {
   switch (state.phase) {
     case "medication_clarification": {
@@ -43,8 +44,10 @@ export function clinicalReply(state: ConversationState): string {
 
 /** Clinical effects run inside the existing serialized turn; no pharmacy confirmation/write UI. */
 export class PrescriptionWorkflow {
+  /** Inject the authorized patient reader used by prescription intake. */
   constructor(readonly reader: PatientClinicalReader) {}
 
+  /** Retrieve owned prescriptions, resolve the request and evaluate deterministic clinical eligibility. */
   async advance(state: ConversationState, context: SessionContext | undefined): Promise<ClinicalProgress> {
     assertSessionPatient(context, state);
     if (!isAuthenticated(state)) throw new Error("Patient authentication is required.");

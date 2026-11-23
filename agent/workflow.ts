@@ -25,14 +25,21 @@ interface Dependencies {
 }
 interface Replay { digest: string; stateDigest: string; reply: AgentReply }
 
+/** Normalize patient text for grounded query comparisons without changing stored patient identity. */
 const normalize = (value: string): string => value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+/** Recognize explicit standalone cancellation commands without a model call. */
 const isCancel = (text: string): boolean => /^(?:cancel(?:\s+(?:(?:my|this|the)\s+)?(?:request|refill|conversation))?|stop|never\s*mind)[.!]?$/i.test(text);
+/** Recognize explicit requests to repeat a previously recoverable read or interpretation step. */
 const isRetry = (text: string): boolean => /^(?:retry|try again|please try again)[.!]?$/i.test(text);
+/** Recognize brief deterministic messages that do not require model interpretation. */
 const isSimple = (text: string): boolean => /^(?:yes|no|ok|okay|hello|hi|thanks|thank you)[.!]?$/i.test(text)
   || /^(?:yes[, ]+)?keep my pharmacy[.!]?$/i.test(text);
+/** Detect attempts to replace the verified patient binding within a conversation. */
 const mentionsIdentitySwitch = (text: string): boolean => /\b(?:patient\s*id|switch\s+(?:the\s+)?patient|change\s+(?:my\s+)?identity|another\s+patient)\b/i.test(text);
+/** Recognize an explicit request not to continue the refill workflow. */
 const negativeRefill = (text: string): boolean => /\b(?:do\s+not|don't|dont|never|no\s+longer)\b[\s\S]{0,60}\b(?:refill|renew)\b/i.test(text);
 
+/** Extract literal refill wording without inventing a medication or inferred authorization. */
 function refillRequest(text: string): RefillRequest | null {
   if (!/\b(?:refill|renew)\b/i.test(text) || /\b(?:do not|don't|not to)\s+(?:refill|renew)\b/i.test(text)) return null;
   const literal = /\b(?:refill|renew)\s+(?:(?:my|the)\s+)?([\s\S]+)$/i.exec(text)?.[1]?.trim().replace(/[.!?]+$/, "");
@@ -40,10 +47,12 @@ function refillRequest(text: string): RefillRequest | null {
   return { medicationQuery: name && !/^(?:a\s+)?(?:prescription|medication|medicine|request|please)$/i.test(name) ? name : null };
 }
 
+/** Retain a proposed medication query only when it appears in the patient message. */
 function groundedQuery(query: string | null, text: string): string | null {
   return query && normalize(text).includes(normalize(query)) ? query : null;
 }
 
+/** Ask only for the authentication factors still missing from the current intake state. */
 function identityPrompt(factors: IdentityFactors): string {
   const labels: Record<string, string> = {
     firstName: "first name", lastName: "last name", dob: "date of birth (YYYY-MM-DD)",
@@ -53,6 +62,7 @@ function identityPrompt(factors: IdentityFactors): string {
   return `To verify your identity, please provide your ${missing.length ? missing.join(", ") : "identity details again"}.`;
 }
 
+/** Describe the current workflow phase using deterministic, outcome-accurate responses. */
 function replyFor(state: ConversationState): string {
   switch (state.phase) {
     case "collecting_identity": return identityPrompt(state.factors);
@@ -81,22 +91,27 @@ export class ConversationEngine {
   readonly #replays = new Map<string, Replay>();
   readonly #replayKey = randomBytes(32);
 
+  /** Inject session, interpretation, authentication and guarded prescription workflow dependencies. */
   constructor(dependencies: Dependencies) { this.#dependencies = dependencies; }
 
+  /** Serialize one validated patient turn while enforcing identity, replay, consent and clinical boundaries. */
   async handleTurn(conversationId: string, patientText: string): Promise<AgentReply> {
     const input = requestSchema.safeParse({ from: "patient", text: patientText });
     if (!input.success) throw new InputValidationError();
     const text = input.data.text;
     const digest = createHmac("sha256", this.#replayKey).update(text).digest("hex");
+    /** Create a keyed state fingerprint for replay matching without retaining extra conversation text. */
     const stateDigest = (state: ConversationState): string => createHmac("sha256", this.#replayKey)
       .update(JSON.stringify(validateConversationState(state))).digest("hex");
     return this.#dependencies.sessions.run(conversationId, async (current, context) => {
+      /** Build the public reply and cache it only against the resulting validated state fingerprint. */
       const finish = (state: ConversationState, message = replyFor(state), cache = true): SessionUpdate<AgentReply> => {
         const reply: AgentReply = { messages: [{ from: "agent", text: message }], state: publicConversationState(state) };
         if (cache) this.#replays.set(conversationId, { digest, stateDigest: stateDigest(state), reply: structuredClone(reply) });
         else this.#replays.delete(conversationId);
         return { state, result: reply };
       };
+      /** Advance authenticated prescription review and prepare any required pharmacy question. */
       const finishClinical = async (state: ConversationState): Promise<SessionUpdate<AgentReply>> => {
         if (!this.#dependencies.clinical || !isAuthenticated(state)) return finish(state);
         const progress = await this.#dependencies.clinical.advance(state, context);

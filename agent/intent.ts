@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+/** Build a bounded model-text field that represents absent information explicitly as null. */
 const nullableText = (max: number) => z.string().trim().min(1).max(max).nullable();
 
 // These are language proposals, never authenticated identities or action permissions.

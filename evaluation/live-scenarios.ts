@@ -68,26 +68,34 @@ export interface LiveScenario {
 }
 interface Candidate { readonly patient: Patient; readonly medication: Medication }
 
+/** Format only the supplied synthetic patient factors for an authentication test turn. */
 const identity = (patient: Patient): string => `${patient.firstName} ${patient.lastName}, DOB ${patient.dob}, phone ending ${patient.phone.replace(/\D/gu, "").slice(-4)}, ZIP ${patient.zip}.`;
+/** Construct a literal refill request using a medication present in the synthetic fixture. */
 const request = (medication: Medication): string => `Please refill my ${medication.name}.`;
 // This wording deliberately avoids the engine's refill/renew fast path and identity labels.
+/** Construct a synthetic refill paraphrase that exercises the existing language interpreter. */
 const naturalRequest = (medication: Medication): string => `Another supply of ${medication.name} is needed, please.`;
 const unopened: LiveCheckpoint = { afterTurn: 0, state: "in_progress", maxProtectedReads: 0, refills: 0, pharmacyUpdates: 0 };
+/** Define a checkpoint requiring an active conversation with no backend mutation. */
 const beforeMutation = (afterTurn: number): LiveCheckpoint => ({ afterTurn, state: "in_progress", refills: 0, pharmacyUpdates: 0 });
+/** Label the intended interpretation of a supplied synthetic medication request. */
 const modelLabel = (medication: Medication): LiveModelExpectation => ({ turnIndex: 0, expectedIntent: "refill_request", medicationQuery: medication.name });
 
 /** Definitions contain labeled expectations, never fabricated service responses or receipts. */
 export function buildLiveScenarios(input: LiveDataset): readonly LiveScenario[] {
   const dataset = liveDatasetSchema.parse(input);
   const candidates: Candidate[] = dataset.patients.flatMap(patient => patient.medications.map(medication => ({ patient, medication })));
+  /** Select an actual synthetic fixture meeting the scenario predicate or fail explicitly. */
   const required = (predicate: (candidate: Candidate) => boolean, purpose: string): Candidate => {
     const found = candidates.find(predicate);
     if (!found) throw new Error(`Supplied synthetic dataset lacks a fixture for ${purpose}.`);
     return found;
   };
+  /** Evaluate fixture eligibility using the same deterministic rules and authoritative dataset time. */
   const decision = ({ patient, medication }: Candidate) => evaluateEligibility(medication, patient.labs, dataset.now);
   const eligible = required(candidate => candidate.patient.currentPharmacyId !== null && decision(candidate).eligible,
     "an eligible prescription and known current pharmacy");
+  /** Select a synthetic prescription whose deterministic policy result includes the required restriction. */
   const blocked = (reason: PolicyReason) => required(candidate => decision(candidate).reasons.includes(reason), reason);
   const r1 = blocked("R1_schedule_ii");
   const r2 = required(candidate => candidate.medication.schedule !== "CII"
@@ -109,6 +117,7 @@ export function buildLiveScenarios(input: LiveDataset): readonly LiveScenario[] 
   if (patient.medications.some(record => record.name === unsupportedStrength)) {
     throw new Error("Correction fixture needs a strength absent from this patient's actual records.");
   }
+  /** Construct a blocked-policy conversation with explicit zero-mutation and response assertions. */
   const restricted = (id: string, title: string, candidate: Candidate, reason: PolicyReason, fragment: string): LiveScenario => ({
     id, title, notes: "Uses unmodified mock records and authoritative EHR time; policy remains deterministic.",
     turns: [naturalRequest(candidate.medication), request(candidate.medication), identity(candidate.patient),

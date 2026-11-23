@@ -1,6 +1,6 @@
 # Persistent engineering instructions
 
-- Treat docs/API.md and supplied grader contracts as authoritative. Read docs/REQUIREMENTS.md and docs/ARCHITECTURE.md before functional work; distinguish contract requirements from design decisions.
+- Treat docs/API.md and supplied grader contracts as authoritative. Read README.md for architecture and requirements traceability before functional work; distinguish contract requirements from design decisions.
 - Use strict TypeScript and small testable modules. Compose dependencies through narrow interfaces; keep policy pure and deterministic.
 - Never display, copy, log, overwrite or commit credentials. Do not read environment files for inspection or stage them. Use explicit paths when staging; never git add . or git add -A. Do not export real credentials into the mock, which prints its service keys.
 - No hardcoded credentials or patient-specific application behavior. Read configuration from environment. Never encode seed names, IDs, medication choices or clinical outcomes in application logic.
@@ -11,5 +11,5 @@
 - Run appropriate typechecks/tests and unchanged conformance. Never fabricate results; report exact failures, skipped checks and environmental blockers. Distinguish planned tests from executed tests.
 - Prevent duplicate writes within sessions; never blindly retry an uncertain refill submission. Disclose limitations of in-memory persistence and missing upstream idempotency.
 - Make clean Git commits after successful verification. If verification is blocked, report it and obtain direction before committing functional work. The explicitly requested analysis-only documentation commit may record a blocked baseline honestly.
-- Report uncertainty, assumptions, partial successes and limitations clearly. Keep submission instructions reproducible and transcripts complete but secret-redacted.
+- Report uncertainty, assumptions, partial successes and limitations clearly. Keep submission instructions reproducible; the candidate reports that Artera waived the AI transcript deliverable, as recorded in SUBMISSION.md.
 - Respect the phase scope explicitly authorized in the current user instructions. Stop after its requested commit; do not implement subsequent phases without instruction.

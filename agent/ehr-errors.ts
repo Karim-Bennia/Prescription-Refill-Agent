@@ -5,6 +5,7 @@ export class EhrError extends Error {
   readonly status?: number;
   readonly retryAfterMs?: number;
 
+  /** Create a sanitized identity-service failure with bounded retry metadata. */
   constructor(code: EhrErrorCode, details: { retryable?: boolean; status?: number; retryAfterMs?: number } = {}) {
     super(`Identity service failed (${code}).`);
     this.name = "EhrError";

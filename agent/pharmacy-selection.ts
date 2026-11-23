@@ -28,8 +28,10 @@ const choiceSchema = z.strictObject({
 const choicesSchema = z.array(choiceSchema).max(1000)
   .refine(records => new Set(records.map(record => record.pharmacyId)).size === records.length);
 
+/** Normalize pharmacy names and addresses for literal Unicode-aware comparisons. */
 const normalize = (text: string): string => text.normalize("NFKC").toLocaleLowerCase("en-US")
   .replace(/[’]/gu, "'").replace(/\s+/gu, " ").trim();
+/** Remove terminal sentence punctuation from normalized pharmacy command text. */
 const statement = (text: string): string => normalize(text).replace(/[.!?]+$/u, "").trim();
 
 /** An affirmative is useful only when the caller has a trusted, specific pending question. */
@@ -57,6 +59,7 @@ export function parsePharmacyCommand(text: string): PharmacyCommand {
 }
 
 export class PharmacySelectionError extends Error {
+  /** Represent invalid pharmacy selection data without retaining the input. */
   constructor() { super("Pharmacy selection input is invalid."); this.name = "PharmacySelectionError"; }
 }
 
@@ -64,6 +67,7 @@ const ordinals: Readonly<Record<string, number>> = Object.freeze({
   first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6,
   seventh: 7, eighth: 8, ninth: 9, tenth: 10,
 });
+/** Extract normalized name and address tokens for grounded pharmacy matching. */
 const tokens = (text: string): string[] => normalize(text).match(/[\p{L}\p{N}]+/gu) ?? [];
 
 /** Resolve only actual, currently presented directory records; identifiers in chat are ignored. */

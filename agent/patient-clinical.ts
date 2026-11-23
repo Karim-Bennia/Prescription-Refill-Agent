@@ -11,8 +11,10 @@ import { evaluateEligibility, type PolicyDecision } from "./policy.js";
 /** Protected reads accept a repository lease and state, never a caller-provided patient ID. */
 export class PatientClinicalReader {
   readonly #ehr: ClinicalEhr;
+  /** Inject the clinical adapter behind active session-ownership checks. */
   constructor(ehr: ClinicalEhr) { this.#ehr = ehr; }
 
+  /** Authorize the repository-issued patient binding before retrieving validated prescriptions. */
   async medications(state: ConversationState, context: SessionContext | undefined): Promise<Medication[]> {
     const id = assertSessionPatient(context, state);
     const result = medicationListSchema.safeParse(await this.#ehr.medications(id));
@@ -20,6 +22,7 @@ export class PatientClinicalReader {
     return result.data;
   }
 
+  /** Require active authenticated session state before reading the authoritative clinical clock. */
   async time(state: ConversationState, context: SessionContext | undefined): Promise<string> {
     assertSessionPatient(context, state);
     const result = ehrTimeSchema.safeParse({ now: await this.#ehr.time() });
@@ -27,6 +30,7 @@ export class PatientClinicalReader {
     return result.data.now;
   }
 
+  /** Authorize the session patient before retrieving validated laboratory records. */
   async labs(state: ConversationState, context: SessionContext | undefined, type: string): Promise<Lab[]> {
     const id = assertSessionPatient(context, state);
     const result = labListSchema.safeParse(await this.#ehr.labs(id, type));
@@ -34,6 +38,7 @@ export class PatientClinicalReader {
     return result.data;
   }
 
+  /** Authorize the session patient before retrieving a validated current pharmacy. */
   async pharmacy(state: ConversationState, context: SessionContext | undefined): Promise<Pharmacy | null> {
     const id = assertSessionPatient(context, state);
     const result = pharmacySchema.safeParse(await this.#ehr.pharmacy(id));

@@ -5,13 +5,13 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const excludedDirectories = new Set(["tests", "mock", "scripts", "node_modules"]);
 
-/** Node 22.5+ excludes paths matching test directories by default, including checkout parents.
- * An explicit dependency exclusion restores collection; application-only filtering remains below. */
+/** Restore native coverage beneath test-named checkout directories when the runtime supports explicit exclusions. */
 export function nativeCoverageExclusions() {
   return process.allowedNodeEnvironmentFlags.has("--test-coverage-exclude")
     ? ["--test-coverage-exclude=**/node_modules/**"] : [];
 }
 
+/** Restrict application coverage to TypeScript implementation files inside the repository's agent directory. */
 function isApplicationFile(path, root) {
   if (typeof path !== "string" || !isAbsolute(path)) return false;
   const withinRepository = relative(root, resolve(path));
@@ -22,6 +22,7 @@ function isApplicationFile(path, root) {
     && withinRepository.endsWith(".ts") && !withinRepository.endsWith(".d.ts");
 }
 
+/** Validate and extract native coverage counters without accepting impossible or unsafe totals. */
 function counter(file, coveredKey, totalKey) {
   const covered = file[coveredKey];
   const total = file[totalKey];
@@ -64,6 +65,7 @@ export function summarizeApplicationCoverage(files, root = repositoryRoot) {
 /** Preserve Node's TAP/all-files report and append a separately labelled application summary. */
 export default async function* coverageReporter(source) {
   let summary;
+  /** Capture application coverage while forwarding every native event to the standard TAP reporter. */
   async function* collect() {
     for await (const event of source) {
       if (event.type === "test:coverage") summary = summarizeApplicationCoverage(event.data.summary.files);

@@ -10,11 +10,13 @@ export interface PolicyDecision {
 }
 const DAY = 86_400_000;
 
+/** Freeze the deterministic eligibility result and its safe clinical reason codes. */
 function decision(reasons: readonly PolicyReason[]): PolicyDecision {
   return Object.freeze({ eligible: reasons.length === 0, reasons: Object.freeze([...reasons]) });
 }
 
-/** Pure assessment policy. Its only clock is the EHR instant supplied by the caller. */
+// Its only clock is the EHR instant supplied by the caller.
+/** Evaluate the four deterministic clinical rules against validated prescription, lab and EHR time inputs. */
 export function evaluateEligibility(medication: unknown, labs: unknown, now: unknown): PolicyDecision {
   const parsedMedication = medicationSchema.safeParse(medication);
   const parsedLabs = labListSchema.safeParse(labs);

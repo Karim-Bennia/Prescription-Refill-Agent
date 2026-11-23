@@ -3,10 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "types": ["node"]
   },
-  "include": ["mock", "agent", "conformance", "tests", "evaluation"]
+  "include": ["mock", "agent", "conformance", "tests", "evaluation", "scripts/*.ts", "frontend/server.ts", "frontend/start.ts", "frontend/build.ts"]
 }

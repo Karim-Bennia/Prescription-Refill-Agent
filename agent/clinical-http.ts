@@ -11,6 +11,7 @@ export class ClinicalEhrError extends Error {
   readonly status?: number;
   readonly retryAfterMs?: number;
 
+  /** Create a sanitized clinical-service error with explicit retry and mutation-uncertainty classifications. */
   constructor(code: ClinicalEhrErrorCode, details: {
     uncertain?: boolean; retryable?: boolean; status?: number; retryAfterMs?: number;
   } = {}) {
@@ -37,6 +38,7 @@ export interface ClinicalEhrDependencies {
   now?: () => number;
 }
 
+/** Accept only a credential-free HTTPS origin or an explicit local HTTP origin. */
 function safeOrigin(value: string): boolean {
   try {
     const url = new URL(value);
@@ -77,6 +79,7 @@ const operationSchema = z.discriminatedUnion("kind", [
 ]);
 export type ClinicalOperation = z.infer<typeof operationSchema>;
 
+/** Map a validated clinical operation to its documented path and minimal JSON body. */
 function requestDetails(operation: ClinicalOperation): { path: string; body?: string } {
   if (operation.kind === "time") return { path: "/ehr/time" };
   if (operation.kind === "directory") return { path: `/pharmacy/directory?q=${encodeURIComponent(operation.query)}` };
@@ -90,6 +93,7 @@ function requestDetails(operation: ClinicalOperation): { path: string; body?: st
   }
 }
 
+/** Convert a valid Retry-After duration or timestamp to a bounded-retry scheduling input. */
 function retryAfter(value: string | null, now: number): number | undefined {
   if (value === null) return undefined;
   if (/^\d+(?:\.\d+)?$/.test(value.trim())) {
@@ -100,6 +104,7 @@ function retryAfter(value: string | null, now: number): number | undefined {
   return Number.isFinite(timestamp) && Number.isFinite(now) ? Math.max(0, timestamp - now) : undefined;
 }
 
+/** Parse a size-limited UTF-8 service response and retain uncertainty for malformed write results. */
 async function readBoundedJson(response: Response, write: boolean): Promise<unknown> {
   if (!response.body) throw new ClinicalEhrError("invalid_response", { uncertain: write });
   const reader = response.body.getReader();
@@ -132,6 +137,7 @@ export class ClinicalHttpTransport {
   readonly #random: () => number;
   readonly #now: () => number;
 
+  /** Validate service configuration and inject transport, timing and backoff dependencies. */
   constructor(config: ClinicalEhrConfig, dependencies: ClinicalEhrDependencies = {}) {
     const parsed = configSchema.safeParse(config);
     if (!parsed.success) throw new ClinicalEhrError("invalid_request");
@@ -142,6 +148,7 @@ export class ClinicalHttpTransport {
     this.#now = dependencies.now ?? Date.now;
   }
 
+  /** Execute an allowlisted operation with bounded read retries and no mutation retries. */
   async execute(operation: ClinicalOperation): Promise<unknown> {
     const parsed = operationSchema.safeParse(operation);
     if (!parsed.success) throw new ClinicalEhrError("invalid_request");
@@ -163,6 +170,7 @@ export class ClinicalHttpTransport {
     }
   }
 
+  /** Apply one transport and response-body deadline to a clinical service operation. */
   async #attempt(operation: ClinicalOperation): Promise<unknown> {
     const write = operation.kind === "refill" || operation.kind === "pharmacy_update";
     const controller = new AbortController();
@@ -173,6 +181,7 @@ export class ClinicalHttpTransport {
         controller.abort();
       }, this.#config.timeoutMs);
     });
+    /** Send one authenticated allowlisted service request and classify its sanitized response. */
     const request = async (): Promise<unknown> => {
       try {
         const { path, body } = requestDetails(operation);

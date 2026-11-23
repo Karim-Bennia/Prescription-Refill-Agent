@@ -18,12 +18,14 @@ export const replySchema = z.strictObject({
 export type AgentReply = z.infer<typeof replySchema>;
 
 export class InputValidationError extends Error {
+  /** Represent invalid conversation input without retaining the supplied values. */
   constructor() {
     super("Invalid conversation input.");
     this.name = "InputValidationError";
   }
 }
 
+/** Validate a conversation routing identifier without treating it as patient authentication. */
 export function parseConversationId(value: unknown): string {
   const result = conversationIdSchema.safeParse(value);
   if (!result.success) throw new InputValidationError();

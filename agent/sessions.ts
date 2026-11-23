@@ -6,6 +6,7 @@ import { conversationIdSchema } from "./validation.js";
 export type SessionErrorCode = "invalid_session" | "capacity" | "invalid_state" | "expired";
 export class SessionError extends Error {
   readonly code: SessionErrorCode;
+  /** Represent a sanitized session validation, expiry or resource-capacity failure. */
   constructor(code: SessionErrorCode) {
     super(`Session operation failed (${code}).`);
     this.name = "SessionError";
@@ -20,6 +21,7 @@ interface ContextRecord { assertActive: () => void; patientId?: string; bindingA
   selection?: SavedSelection; selectionVersion: number; pharmacyPrompt?: string }
 const activeContexts = new WeakMap<SessionContext, ContextRecord>();
 
+/** Require a live repository-issued context before accessing its trusted session binding. */
 function contextRecord(context: SessionContext | undefined): ContextRecord {
   const record = context && activeContexts.get(context);
   if (!record) throw new SessionError("invalid_state");
@@ -51,6 +53,7 @@ export function assertSessionEvidence(context: SessionContext | undefined, patie
   if (!record || record.patientId !== patientId) throw new SessionError("invalid_state");
 }
 
+/** Return a revision only when the saved prescription and pharmacy question still match. */
 export function sessionSelectionVersion(context: SessionContext | undefined, state: ConversationState): number | undefined {
   const record = contextRecord(context);
   assertSessionPatient(context, state);
@@ -80,14 +83,17 @@ export interface SessionRepositoryOptions {
 }
 interface Entry { state: ConversationState; lastActivity: number; selectionVersion: number }
 
+/** Describe authorization-relevant selection context for revision invalidation. */
 function selectionKey(state: ConversationState): string {
   return isAuthenticated(state) ? JSON.stringify({ patientId: state.patientId,
     request: state.request, selected: state.phase === "awaiting_pharmacy_confirmation"
       ? [state.medId, state.medicationName, state.pharmacyContext ?? null] : null }) : state.phase;
 }
 
+/** Clone and recursively freeze retained conversation state before exposing or storing it. */
 function snapshot(state: ConversationState): ConversationState {
   const clone = structuredClone(state);
+  /** Recursively freeze nested session values so callers cannot mutate retained state. */
   const freeze = (value: object): void => {
     for (const child of Object.values(value)) if (child && typeof child === "object") freeze(child);
     Object.freeze(value);
@@ -96,6 +102,7 @@ function snapshot(state: ConversationState): ConversationState {
   return clone;
 }
 
+/** Validate a proposed state update while preserving terminal state and patient identity. */
 function validateUpdate(previous: ConversationState, value: unknown): ConversationState {
   let next: ConversationState;
   try { next = validateConversationState(value); }
@@ -116,6 +123,7 @@ export class InMemorySessionRepository implements SessionRepository {
   readonly #ttlMs: number;
   readonly #now: () => number;
 
+  /** Configure bounded process-local session capacity, inactivity expiry and the injected clock. */
   constructor(options: SessionRepositoryOptions = {}) {
     this.#maxSessions = options.maxSessions ?? 1000;
     this.#ttlMs = options.ttlMs ?? 30 * 60 * 1000;
@@ -124,6 +132,7 @@ export class InMemorySessionRepository implements SessionRepository {
       || !Number.isSafeInteger(this.#ttlMs) || this.#ttlMs < 1) throw new SessionError("invalid_state");
   }
 
+  /** Serialize a bounded conversation turn and commit validated immutable session state. */
   async run<T>(conversationId: string, operation: (state: ConversationState, context?: SessionContext) => Promise<SessionUpdate<T>>): Promise<T> {
     if (!conversationIdSchema.safeParse(conversationId).success) throw new SessionError("invalid_session");
     const pending = this.#pending.get(conversationId) ?? 0;
@@ -157,6 +166,7 @@ export class InMemorySessionRepository implements SessionRepository {
         selectionVersion: entry.selectionVersion,
         pharmacyPrompt: before.phase === "awaiting_pharmacy_confirmation" && before.pharmacyContext
           ? JSON.stringify(before.pharmacyContext) : undefined,
+        /** Reject protected operations after the current lease expires or becomes terminal. */
         assertActive: () => { if (this.#clock() - entry.lastActivity >= this.#ttlMs || isTerminal(entry.state)) throw new SessionError("expired"); },
       });
       const update = await operation(before, context);
@@ -184,6 +194,7 @@ export class InMemorySessionRepository implements SessionRepository {
     }
   }
 
+  /** Require a finite injected timestamp for session lifetime decisions. */
   #clock(): number {
     const value = this.#now();
     if (!Number.isFinite(value)) throw new SessionError("invalid_state");

@@ -9,6 +9,7 @@ export type LiveStopReason = "budget_exhausted" | "rate_limit" | "payment_requir
   | "model_unavailable" | "provider_unavailable";
 type GuardReason = LiveStopReason | "concurrent_call" | "aborted" | "invalid_destination" | "invalid_configuration" | "invalid_clock";
 export class LiveEvaluationStop extends Error {
+  /** Represent a sanitized evaluation guard failure without retaining provider details. */
   constructor(readonly reason: GuardReason) { super(`Live evaluation stopped (${reason}).`); this.name = "LiveEvaluationStop"; }
 }
 
@@ -39,6 +40,7 @@ const usageSchema = z.object({ prompt_tokens: z.number().int().min(0).max(1_000_
 const errorCodes = new Set<LlmErrorCode>(["invalid_input", "invalid_response", "authentication", "rate_limit",
   "model_unavailable", "provider", "network", "timeout", "refused"]);
 
+/** Compute explicit sample counts, median, nearest-rank p95 and maximum valid latency. */
 export function latencySummary(values: readonly number[]) {
   if (!values.every(value => Number.isFinite(value) && value >= 0)) throw new LiveEvaluationStop("invalid_clock");
   const sorted = [...values].sort((a, b) => a - b);
@@ -62,6 +64,7 @@ export class LiveEvaluationObserver {
   #lastDispatch?: number;
   #stopReason?: LiveStopReason;
 
+  /** Validate evaluation budgets and inject safe transport, pacing and timing dependencies. */
   constructor(options: LiveObserverOptions = {}, dependencies: LiveObserverDependencies = {}) {
     const parsed = optionsSchema.safeParse(options);
     if (!parsed.success) throw new LiveEvaluationStop("invalid_configuration");
@@ -71,21 +74,27 @@ export class LiveEvaluationObserver {
     this.#now = dependencies.now ?? performance.now.bind(performance);
   }
 
+  /** Expose the sanitized reason that prevents further live provider requests. */
   get stopReason(): LiveStopReason | undefined { return this.#stopReason; }
+  /** Return an isolated snapshot of allowlisted request metrics. */
   requests(): readonly LiveRequestMetric[] { return structuredClone(this.#requests); }
+  /** Return an isolated snapshot of schema-validation and interpretation-label metrics. */
   interpretations(): readonly LiveInterpretationMetric[] { return structuredClone(this.#interpretations); }
 
+  /** Reject nonfinite timing samples before they enter evaluation metrics. */
   #clock(): number {
     const value = this.#now();
     if (!Number.isFinite(value)) throw new LiveEvaluationStop("invalid_clock");
     return value;
   }
+  /** Stop before dispatch when provider safety limits or the request budget are exhausted. */
   #running(): void {
     if (this.#stopReason) throw new LiveEvaluationStop(this.#stopReason);
     if (this.#requests.length >= this.#options.maxRequests) {
       this.#stopReason = "budget_exhausted"; throw new LiveEvaluationStop(this.#stopReason);
     }
   }
+  /** Delay sequential dispatch until the configured request interval has elapsed. */
   async #pace(): Promise<void> {
     if (this.#lastDispatch !== undefined) {
       const remaining = this.#options.minIntervalMs - (this.#clock() - this.#lastDispatch);
@@ -93,7 +102,7 @@ export class LiveEvaluationObserver {
     }
   }
 
-  /** Counts actual network attempts, including adapter retries; root uses maxRetries:0 for live runs. */
+  /** Record actual provider attempts within the request budget, including any adapter retries. */
   readonly fetch: typeof fetch = async (input, init) => {
     this.#running();
     if (this.#activeFetch) throw new LiveEvaluationStop("concurrent_call");
@@ -131,36 +140,40 @@ export class LiveEvaluationObserver {
     }
   };
 
-  /** Serial use is deliberate; accidental concurrent batches fail before provider invocation.
-   * Pacing here occurs before the adapter starts its own request deadline. */
+  // Pacing occurs before the adapter starts its own request deadline.
+  /** Wrap the existing interpreter with serial execution and privacy-safe evaluation metrics. */
   wrap(provider: LanguageInterpreter): LanguageInterpreter {
-    return { interpret: async text => {
-      this.#running();
-      if (this.#activeInterpretation) throw new LiveEvaluationStop("concurrent_call");
-      if (this.#interpretations.length >= this.#options.maxRequests * 2) {
-        this.#stopReason = "budget_exhausted"; throw new LiveEvaluationStop(this.#stopReason);
+    return {
+      /** Observe a validated interpretation without retaining the prompt or model-extracted sensitive fields. */
+      interpret: async text => {
+        this.#running();
+        if (this.#activeInterpretation) throw new LiveEvaluationStop("concurrent_call");
+        if (this.#interpretations.length >= this.#options.maxRequests * 2) {
+          this.#stopReason = "budget_exhausted"; throw new LiveEvaluationStop(this.#stopReason);
+        }
+        this.#activeInterpretation = true;
+        let started: number | undefined;
+        const metric: LiveInterpretationMetric = { durationMs: 0, structuredOutputValid: null };
+        try {
+          await this.#pace(); this.#running(); started = this.#clock();
+          const parsed = interpretationSchema.safeParse(await provider.interpret(text));
+          if (!parsed.success) throw new LlmProviderError("invalid_response");
+          metric.structuredOutputValid = true; metric.intent = parsed.data.intent; metric.clarification = parsed.data.clarification;
+          return parsed.data;
+        } catch (error) {
+          if (error instanceof LiveEvaluationStop) { metric.errorCode = error.reason; throw error; }
+          const code = error instanceof LlmProviderError && errorCodes.has(error.code) ? error.code : "provider";
+          metric.errorCode = code; metric.structuredOutputValid = code === "invalid_response" ? false : null;
+          throw new LlmProviderError(code);
+        } finally {
+          if (started !== undefined) metric.durationMs = Math.max(0, this.#clock() - started);
+          this.#interpretations.push(metric); this.#activeInterpretation = false;
+        }
       }
-      this.#activeInterpretation = true;
-      let started: number | undefined;
-      const metric: LiveInterpretationMetric = { durationMs: 0, structuredOutputValid: null };
-      try {
-        await this.#pace(); this.#running(); started = this.#clock();
-        const parsed = interpretationSchema.safeParse(await provider.interpret(text));
-        if (!parsed.success) throw new LlmProviderError("invalid_response");
-        metric.structuredOutputValid = true; metric.intent = parsed.data.intent; metric.clarification = parsed.data.clarification;
-        return parsed.data;
-      } catch (error) {
-        if (error instanceof LiveEvaluationStop) { metric.errorCode = error.reason; throw error; }
-        const code = error instanceof LlmProviderError && errorCodes.has(error.code) ? error.code : "provider";
-        metric.errorCode = code; metric.structuredOutputValid = code === "invalid_response" ? false : null;
-        throw new LlmProviderError(code);
-      } finally {
-        if (started !== undefined) metric.durationMs = Math.max(0, this.#clock() - started);
-        this.#interpretations.push(metric); this.#activeInterpretation = false;
-      }
-    } };
+    };
   }
 
+  /** Aggregate request, interpretation, latency and validated usage counters with explicit denominators. */
   summary() {
     const usage = this.#requests.flatMap(request => request.usage ? [request.usage] : []);
     return { actualRequests: this.#requests.length, maxRequests: this.#options.maxRequests, stopReason: this.#stopReason ?? null,
@@ -175,9 +188,11 @@ export class LiveEvaluationObserver {
         completionTokens: usage.reduce((sum, item) => sum + item.completionTokens, 0), totalTokens: usage.reduce((sum, item) => sum + item.totalTokens, 0) } : null };
   }
 
+  /** Collect only allowlisted model and usage metadata within independent byte and time limits. */
   async #metadata(response: Response): Promise<Partial<LiveRequestMetric> | undefined> {
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    /** Read a bounded cloned response and extract only trusted metadata fields. */
     const task = async (): Promise<Partial<LiveRequestMetric> | undefined> => {
       const clone = response.clone(); if (!clone.body) return undefined;
       reader = clone.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;

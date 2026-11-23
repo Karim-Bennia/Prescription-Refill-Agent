@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+# This exact literal configures an isolated mock; it is never a provider credential.
+[[allowlists]]
+description = "Synthetic pharmacy token in the unchanged clinical integration fixture"
+condition = "AND"
+paths = ['''(?:^|/)tests/clinical-integration\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^synthetic-phase4-pharmacy$''']

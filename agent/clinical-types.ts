@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+/** Reject calendar dates that fail a strict UTC midnight round trip. */
 function calendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const timestamp = Date.parse(`${value}T00:00:00.000Z`);

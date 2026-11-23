@@ -29,6 +29,7 @@ const configSchema = z.strictObject({
   maxRetries: z.number().int().min(0).max(3),
 });
 
+/** Translate valid provider retry timing into milliseconds without retaining header contents. */
 function retryAfter(value: string | null, now: number): number | undefined {
   if (value === null) return undefined;
   if (/^\d+(?:\.\d+)?$/.test(value.trim())) {
@@ -39,6 +40,7 @@ function retryAfter(value: string | null, now: number): number | undefined {
   return Number.isFinite(timestamp) ? Math.max(0, timestamp - now) : undefined;
 }
 
+/** Parse a size-limited UTF-8 identity-service response or fail with a sanitized error. */
 async function readBoundedJson(response: Response): Promise<unknown> {
   if (!response.body) throw new EhrError("invalid_response");
   const reader = response.body.getReader();
@@ -71,6 +73,7 @@ export class IdentityHttpTransport {
   readonly #random: () => number;
   readonly #now: () => number;
 
+  /** Validate the identity-service origin and inject transport and retry dependencies. */
   constructor(config: EhrIdentityConfig, dependencies: EhrDependencies = {}) {
     const parsed = configSchema.safeParse(config);
     if (!parsed.success) throw new EhrError("invalid_request");
@@ -81,6 +84,7 @@ export class IdentityHttpTransport {
     this.#now = dependencies.now ?? Date.now;
   }
 
+  /** Perform the read-only identity-match POST with bounded safe retries. */
   async postMatch(factors: IdentityFactors): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
       try { return await this.#attempt(factors); }
@@ -96,6 +100,7 @@ export class IdentityHttpTransport {
     }
   }
 
+  /** Bound one identity-match request and its response body by the configured deadline. */
   async #attempt(factors: IdentityFactors): Promise<unknown> {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -105,6 +110,7 @@ export class IdentityHttpTransport {
         controller.abort();
       }, this.#config.timeoutMs);
     });
+    /** Send only identity factors to the fixed match endpoint and classify service failures. */
     const request = async (): Promise<unknown> => {
       try {
         const response = await this.#fetch(`${this.#config.baseUrl}/ehr/patients:match`, {

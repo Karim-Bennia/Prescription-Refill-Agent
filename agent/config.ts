@@ -28,6 +28,7 @@ type ConfigurationVariable = typeof variableNames[number];
 export class ConfigurationError extends Error {
   readonly variables: readonly ConfigurationVariable[];
 
+  /** Identify invalid configuration variable names without retaining rejected secret values. */
   constructor(variables: readonly ConfigurationVariable[]) {
     const names = [...new Set(variables)].sort();
     super(`Invalid configuration: ${names.join(", ")}.`);
@@ -55,6 +56,7 @@ const origin = z.string().trim().refine(value => {
   }
 }).transform(value => new URL(value).origin);
 
+/** Build a defaulted environment-integer schema with explicit numeric bounds. */
 function integer(min: number, max: number, fallback: string) {
   return z.string().regex(/^(0|[1-9]\d*)$/).default(fallback).transform(Number)
     .pipe(z.number().int().min(min).max(max));
@@ -72,7 +74,8 @@ const environmentSchema = z.object({
   LLM_MAX_RETRIES: integer(0, 3, "2"),
 }).strict();
 
-/** Pure parser. The composition root alone decides how environment is loaded. */
+// The composition root alone decides how environment is loaded.
+/** Validate allowed environment values and return immutable application configuration. */
 export function loadConfig(env: Readonly<Record<string, string | undefined>>): AppConfig {
   const selected = Object.fromEntries(variableNames.map(name => [name, env[name]]));
   const parsed = environmentSchema.safeParse(selected);

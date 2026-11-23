@@ -15,6 +15,7 @@ export type RefillOutcome =
   | { kind: "unknown" | "rejected" };
 export interface ActionResult { state: ConversationState; outcome: RefillOutcome }
 
+/** Compare the patient, prescription, pharmacy and revision bound to two refill authorizations. */
 function sameScope(first: Scope, second: Scope): boolean {
   return first.patientId === second.patientId && first.medId === second.medId
     && first.pharmacyId === second.pharmacyId && first.query === second.query
@@ -27,10 +28,11 @@ export class RefillActions {
   readonly #inflight = new Map<string, Promise<ActionResult>>();
   readonly #reader: PatientClinicalReader;
   readonly #ehr: ClinicalEhr;
+  /** Compose guarded patient reads and the single refill write adapter. */
   constructor(ehr: ClinicalEhr) { this.#ehr = ehr; this.#reader = new PatientClinicalReader(ehr); }
 
-  /** Restore retained facts before accepting a new intent after an interrupted session commit.
-   * This performs no service operation and does not grant new clinical authorization. */
+  // This performs no service operation and does not grant new clinical authorization.
+  /** Restore retained action outcomes before a new intent follows an interrupted session commit. */
   async recoverRecorded(state: ConversationState, context: SessionContext | undefined): Promise<ActionResult | undefined> {
     const record = context && this.#records.get(context.conversationId);
     if (!record || record.kind === "confirmed") return undefined;
@@ -49,6 +51,7 @@ export class RefillActions {
       outcome: { kind } };
   }
 
+  /** Bind explicit confirmation to the saved selection after rereading the current pharmacy. */
   async confirmCurrentPharmacy(
     state: ConversationState, context: SessionContext | undefined, pharmacyId: string,
   ): Promise<boolean> {
@@ -73,6 +76,7 @@ export class RefillActions {
     return true;
   }
 
+  /** Revalidate session ownership, selection, clinical policy and pharmacy consent before one guarded refill write. */
   async submit(state: ConversationState, context: SessionContext | undefined): Promise<ActionResult> {
     const existing = context && this.#records.get(context.conversationId);
     // A terminal receipt is replayable only with this service's retained submission evidence.
@@ -143,6 +147,7 @@ export class RefillActions {
     finally { if (this.#inflight.get(context!.conversationId) === pending) this.#inflight.delete(context!.conversationId); }
   }
 
+  /** Retain a validated submission receipt or a conservative rejected or unknown action outcome. */
   async #write(state: Extract<ConversationState, { phase: "awaiting_pharmacy_confirmation" }>, context: SessionContext,
     scope: Scope, patientId: string, medId: string): Promise<ActionResult> {
     try {

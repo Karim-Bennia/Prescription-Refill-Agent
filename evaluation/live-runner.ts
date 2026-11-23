@@ -28,6 +28,7 @@ const safeHttpErrorSchema = z.strictObject({ error: z.enum([
 type SafeHttpError = z.infer<typeof safeHttpErrorSchema>;
 export type LiveRunnerErrorCode = "invalid_configuration" | "invalid_scenario" | "mock_startup" | "transport" | "invalid_response" | "setup";
 export class LiveRunnerError extends Error {
+  /** Represent a sanitized evaluation setup, transport or schema failure. */
   constructor(readonly code: LiveRunnerErrorCode) { super(`Evaluation runner failed (${code}).`); this.name = "LiveRunnerError"; }
 }
 export interface LiveTranscriptTurn {
@@ -68,6 +69,7 @@ export interface LiveRunnerOptions {
   readonly onTurnStart?: (turnIndex: number) => void;
 }
 
+/** Parse a byte-limited strict UTF-8 response from an isolated evaluation service. */
 async function readJson(response: Response, maxBytes = 1_048_576): Promise<unknown> {
   const reader = response.body?.getReader();
   if (!reader) throw new LiveRunnerError("invalid_response");
@@ -85,6 +87,7 @@ async function readJson(response: Response, maxBytes = 1_048_576): Promise<unkno
   finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
 
+/** Reserve and release an ephemeral loopback port for an isolated mock process. */
 async function availablePort(): Promise<number> {
   const reservation = reserveServer();
   await new Promise<void>((resolve, reject) => {
@@ -96,6 +99,7 @@ async function availablePort(): Promise<number> {
   return address.port;
 }
 
+/** Stop only the owned mock process with a bounded cleanup wait. */
 async function stopMock(child: ChildProcess): Promise<void> {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
   await new Promise<void>(resolve => {
@@ -103,12 +107,14 @@ async function stopMock(child: ChildProcess): Promise<void> {
     child.once("exit", () => { clearTimeout(timer); resolve(); }); child.kill();
   });
 }
+/** Close the isolated agent listener and its open connections. */
 async function closeAgent(server: Server | undefined): Promise<void> {
   if (!server) return;
   server.closeAllConnections();
   await new Promise<void>(resolve => server.close(() => resolve()));
 }
 
+/** Start the unchanged mock with synthetic service credentials and bounded health polling. */
 async function startMock(port: number, ehrToken: string, pharmacyToken: string): Promise<ChildProcess> {
   const environment: Record<string, string> = {};
   for (const name of ["SystemRoot", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP", "ComSpec"]) {
@@ -135,6 +141,7 @@ async function startMock(port: number, ehrToken: string, pharmacyToken: string):
   } catch { await stopMock(child); throw new LiveRunnerError("mock_startup"); }
 }
 
+/** Keep only documented service-call metadata and validated mutation identifiers. */
 function summarizeCalls(raw: z.infer<typeof callsSchema>): SafeServiceCall[] {
   return raw.map(call => {
     const safe = { seq: call.seq, method: call.method, path: call.path };
@@ -151,12 +158,16 @@ function summarizeCalls(raw: z.infer<typeof callsSchema>): SafeServiceCall[] {
     return safe;
   });
 }
+/** Identify patient-record GET operations when checking authentication ordering. */
 const isProtectedRead = (call: SafeServiceCall) => call.method === "GET" && call.path.startsWith("/ehr/patients/");
+/** Select recorded refill POSTs for mutation-count assertions. */
 const refillCalls = (calls: readonly SafeServiceCall[]) => calls.filter(call => call.method === "POST" && call.path.endsWith("/refills"));
+/** Select recorded pharmacy PUTs for consent and mutation-count assertions. */
 const updateCalls = (calls: readonly SafeServiceCall[]) => calls.filter(call => call.method === "PUT" && call.path.endsWith("/pharmacy"));
 
-/** Fresh unchanged mock + real public HTTP orchestration. Inject the existing real provider for opt-in live evaluation,
- * or a deterministic fake for routine tests. This module never reads an environment file or constructs a model client. */
+// Inject the existing real provider for opt-in evaluation or a deterministic fake for routine tests.
+// This module never reads an environment file or constructs a model client.
+/** Run an isolated synthetic HTTP conversation and verify the unchanged mock's actual effects. */
 export async function runMockScenario(scenario: LiveScenario, options: LiveRunnerOptions): Promise<LiveScenarioResult> {
   const timeoutMs = options.timeoutMs ?? 60_000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) throw new LiveRunnerError("invalid_configuration");
@@ -187,6 +198,7 @@ export async function runMockScenario(scenario: LiveScenario, options: LiveRunne
     const endpoint = `http://127.0.0.1:${address.port}/conversations/${conversationId}/messages`;
     const transcript: LiveTranscriptTurn[] = []; const failures: string[] = [];
     let finalState: PublicState | null = null; let calls: SafeServiceCall[] = [];
+    /** Read and validate the isolated mock call log without persisting authentication factors. */
     const snapshot = async () => {
       const response = await fetch(`${mock}/__calls`, { signal: AbortSignal.timeout(5000) });
       if (!response.ok) throw new LiveRunnerError("transport");

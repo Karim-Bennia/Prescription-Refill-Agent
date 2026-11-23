@@ -16,9 +16,11 @@ interface HttpServerOptions {
 const MAX_BODY_BYTES = 16_384;
 
 class RequestError extends Error {
+  /** Carry the sanitized HTTP status for malformed, oversized or incomplete input. */
   constructor(readonly status: 400 | 408 | 413) { super("Request rejected."); }
 }
 
+/** Send a noncached JSON response without writing to an already closed connection. */
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   if (res.destroyed || res.writableEnded) return;
   res.writeHead(status, {
@@ -30,11 +32,13 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+/** Read bounded patient JSON with strict UTF-8 decoding and an explicit body deadline. */
 function readRequestBody(req: IncomingMessage, timeoutMs: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
     let settled = false;
+    /** Settle body parsing once and release buffered input, listeners and the deadline timer. */
     const finish = (failure?: RequestError, value?: unknown) => {
       if (settled) return;
       settled = true;
@@ -50,17 +54,20 @@ function readRequestBody(req: IncomingMessage, timeoutMs: number): Promise<unkno
         reject(failure);
       } else resolve(value);
     };
+    /** Accumulate incoming bytes only while the request remains within its size limit. */
     const onData = (chunk: Buffer) => {
       size += chunk.byteLength;
       if (size > MAX_BODY_BYTES) finish(new RequestError(413));
       else chunks.push(chunk);
     };
+    /** Decode and parse the completed body before settling the input boundary. */
     const onEnd = () => {
       try {
         const raw = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
         finish(undefined, JSON.parse(raw) as unknown);
       } catch { finish(new RequestError(400)); }
     };
+    /** Reject an aborted or broken input stream through the sanitized request boundary. */
     const onError = () => finish(new RequestError(400));
     const timer = setTimeout(() => finish(new RequestError(408)), timeoutMs);
     req.on("data", onData);
@@ -71,6 +78,7 @@ function readRequestBody(req: IncomingMessage, timeoutMs: number): Promise<unkno
   });
 }
 
+/** Expose the documented health and conversation routes with validated input and safe diagnostics. */
 export function createAgentServer(handler: TurnHandler, options: HttpServerOptions = {}): Server {
   const bodyTimeoutMs = options.bodyTimeoutMs ?? 10_000;
   if (!Number.isInteger(bodyTimeoutMs) || bodyTimeoutMs <= 0 || bodyTimeoutMs > 60_000) {
@@ -99,6 +107,7 @@ export function createAgentServer(handler: TurnHandler, options: HttpServerOptio
           durationMs: Math.max(0, Math.round(performance.now() - started)) })).catch(() => undefined);
       } catch { /* Diagnostics must never change the response or expose an observer error. */ }
     });
+    /** Dispatch a validated route and return only schema-checked conversation replies. */
     const processRequest = async () => {
       let pathname: string;
       try { pathname = new URL(req.url ?? "/", "http://localhost").pathname; }

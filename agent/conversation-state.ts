@@ -81,32 +81,39 @@ const eventSchema = z.discriminatedUnion("type", [
 export type ConversationEvent = z.infer<typeof eventSchema>;
 
 export class InvalidTransitionError extends Error {
+  /** Represent a rejected conversation transition without exposing state contents. */
   constructor() { super("Invalid conversation state transition."); this.name = "InvalidTransitionError"; }
 }
 
 export class InvalidConversationStateError extends Error {
+  /** Represent conversation state that fails runtime validation. */
   constructor() { super("Invalid conversation state."); this.name = "InvalidConversationStateError"; }
 }
 
 export class UnauthorizedSessionError extends Error {
+  /** Represent an attempted operation without an authenticated conversation state. */
   constructor() { super("Patient authentication is required."); this.name = "UnauthorizedSessionError"; }
 }
 
+/** Validate untrusted conversation state against the complete discriminated state schema. */
 export function validateConversationState(value: unknown): ConversationState {
   const parsed = conversationStateSchema.safeParse(value);
   if (!parsed.success) throw new InvalidConversationStateError();
   return parsed.data;
 }
 
+/** Create unauthenticated intake state without any saved identity or authorization. */
 export function createInitialState(): ConversationState {
   return { phase: "collecting_identity", factors: {}, request: null, failures: 0 };
 }
 
+/** Narrow the state to active phases containing a verified patient binding. */
 export function isAuthenticated(state: ConversationState): state is AuthenticatedState {
   return state.phase === "collecting_request" || state.phase === "ready"
     || state.phase === "medication_clarification" || state.phase === "awaiting_pharmacy_confirmation";
 }
 
+/** Identify states that reject further conversational actions. */
 export function isTerminal(state: ConversationState): state is Extract<ConversationState, {
   phase: "escalated" | "closed" | "clinical_escalated" | "refill_submitted";
 }> {
@@ -114,12 +121,14 @@ export function isTerminal(state: ConversationState): state is Extract<Conversat
     || state.phase === "clinical_escalated" || state.phase === "refill_submitted";
 }
 
+/** Return the patient identifier only from validated active authenticated state. */
 export function requireAuthenticatedPatient(state: ConversationState): string {
   const validated = validateConversationState(state);
   if (!isAuthenticated(validated)) throw new UnauthorizedSessionError();
   return validated.patientId;
 }
 
+/** Map each internal workflow phase to the documented public response state. */
 export function publicConversationState(state: ConversationState): "in_progress" | "complete" | "escalated" {
   switch (state.phase) {
     case "collecting_identity":
@@ -139,13 +148,15 @@ export function publicConversationState(state: ConversationState): "in_progress"
   }
 }
 
+/** Choose medication intake or ready state while preserving the verified patient identifier. */
 function authenticatedRequest(patientId: string, request: RefillRequest | null): ConversationState {
   return request?.medicationQuery
     ? { phase: "ready", patientId, request: { medicationQuery: request.medicationQuery } }
     : { phase: "collecting_request", patientId, request: null };
 }
 
-/** Pure transition evaluation. EHR and model calls belong in the orchestrator. */
+// EHR and model calls belong in the orchestrator.
+/** Evaluate validated guarded state transitions without external side effects. */
 export function transition(state: ConversationState, event: ConversationEvent): ConversationState {
   const current = validateConversationState(state);
   const parsedEvent = eventSchema.safeParse(event);

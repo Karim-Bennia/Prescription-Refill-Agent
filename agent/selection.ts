@@ -9,6 +9,7 @@ export type SelectionResult =
 export class SelectionError extends Error {
   readonly code = "invalid_selection_input";
 
+  /** Represent invalid medication selection inputs without retaining patient records. */
   constructor() {
     super("Medication selection input is invalid.");
     this.name = "SelectionError";
@@ -40,6 +41,7 @@ const attributes = new Set([
   "dr", "ir",
 ]);
 
+/** Normalize medication name and dosage tokens without rounding distinct numeric strengths. */
 function tokens(value: string): string[] {
   const normalized = value.normalize("NFKC").toLocaleLowerCase("en-US")
     .replace(/[\u2010-\u2015\u2212]/gu, "-")
@@ -57,17 +59,21 @@ function tokens(value: string): string[] {
     });
 }
 
+/** Identify meaningful medication-name tokens while excluding framing and dosage attributes. */
 function substantive(token: string): boolean {
   return /^\p{L}{3,}$/u.test(token) && !attributes.has(token) && !requestWords.has(token);
 }
 
+/** Match exact tokens or substantive name prefixes without weakening dosage constraints. */
 function tokenMatches(query: string, candidate: string): boolean {
   if (query === candidate) return true;
   // Prefixes apply only to substantive name tokens, never strength, unit or formulation.
   return substantive(query) && substantive(candidate) && candidate.startsWith(query);
 }
 
+/** Require ordered name constraints and exact numeric dosage sequences. */
 function matchesInOrder(query: readonly string[], candidate: readonly string[], allowPrefixes = true): boolean {
+  /** Extract numeric dosage tokens while preserving their order and signs. */
   const numbers = (values: readonly string[]) => values.filter(value => /^[+-]?\d/u.test(value));
   const constraints = numbers(query);
   if (constraints.length > 0 && constraints.join("/") !== numbers(candidate).join("/")) return false;
@@ -78,6 +84,7 @@ function matchesInOrder(query: readonly string[], candidate: readonly string[], 
   return index === query.length;
 }
 
+/** Return a selected owned prescription only when exactly one candidate remains. */
 function result(matches: Medication[]): SelectionResult {
   return matches.length === 1
     ? { kind: "selected", medication: matches[0] }

@@ -9,8 +9,9 @@ const CLARIFICATIONS = {
   request: "How can I help with your prescription refill request?",
 } as const;
 
-// Small provider-independent consumer. Future orchestration must still validate identity,
+// Small provider-independent consumer. Orchestration must still validate identity,
 // policy and consent. Model proposals cannot produce action or clinical outcome messages.
+/** Validate model proposals and map clarification labels to deterministic patient questions. */
 export async function interpretMessage(
   provider: LanguageInterpreter, text: string,
 ): Promise<{ interpretation: Interpretation; clarification: string | null }> {

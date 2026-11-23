@@ -1,0 +1,406 @@
+{
+  "runtime": "v24.22.3",
+  "frontend": "http://127.0.0.1:5173",
+  "scenarios": [
+    {
+      "name": "current pharmacy and duplicate confirmation",
+      "conversationId": "phase9-ui-0abf49a0-468d-4c5e-824b-67494a5f5b0a",
+      "turns": [
+        {
+          "patient": "Hello, I need a prescription refill.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "To verify your identity, please provide your first name, last name, date of birth (YYYY-MM-DD), phone ending (last four digits) or ZIP code."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 101
+        },
+        {
+          "patient": "Alice Nguyen, DOB 1988-03-12, phone ending 1234.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Please specify the medication name and strength from your prescription record: Lisinopril 10mg No refill has been submitted."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 168
+        },
+        {
+          "patient": "Please refill my Lisinopril 10mg.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Your current pharmacy is Mission Rx (reference ph_002). Reply \"Yes, keep my pharmacy\" to submit your refill request for Lisinopril 10mg to this pharmacy, or ask for a different pharmacy. No refill has been submitted."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 53
+        },
+        {
+          "patient": "Yes, keep my pharmacy.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "For Lisinopril 10mg at Mission Rx: Your refill request was submitted to the EHR service. This confirms submission, not dispensing or a new prescription."
+              }
+            ],
+            "state": "complete"
+          },
+          "durationMs": 39
+        },
+        {
+          "patient": "Yes, keep my pharmacy.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Your refill request was submitted to the EHR service. This confirms submission, not dispensing or a new prescription."
+              }
+            ],
+            "state": "complete"
+          },
+          "durationMs": 9
+        }
+      ],
+      "calls": [
+        {
+          "seq": 1,
+          "method": "POST",
+          "path": "/ehr/patients:match",
+          "query": {}
+        },
+        {
+          "seq": 2,
+          "method": "GET",
+          "path": "/ehr/patients/pat_001/medications",
+          "query": {}
+        },
+        {
+          "seq": 3,
+          "method": "GET",
+          "path": "/ehr/patients/pat_001/medications",
+          "query": {}
+        },
+        {
+          "seq": 4,
+          "method": "GET",
+          "path": "/ehr/time",
+          "query": {}
+        },
+        {
+          "seq": 5,
+          "method": "GET",
+          "path": "/ehr/patients/pat_001/pharmacy",
+          "query": {}
+        },
+        {
+          "seq": 6,
+          "method": "GET",
+          "path": "/ehr/patients/pat_001/pharmacy",
+          "query": {}
+        },
+        {
+          "seq": 7,
+          "method": "GET",
+          "path": "/ehr/patients/pat_001/medications",
+          "query": {}
+        },
+        {
+          "seq": 8,
+          "method": "GET",
+          "path": "/ehr/time",
+          "query": {}
+        },
+        {
+          "seq": 9,
+          "method": "GET",
+          "path": "/ehr/patients/pat_001/pharmacy",
+          "query": {}
+        },
+        {
+          "seq": 10,
+          "method": "POST",
+          "path": "/ehr/patients/pat_001/refills",
+          "query": {},
+          "body": {
+            "medId": "m_happy"
+          }
+        }
+      ],
+      "refillPosts": 1,
+      "pharmacyPuts": 0
+    },
+    {
+      "name": "Schedule II clinical refusal",
+      "conversationId": "phase9-ui-ddcd3b9c-c39b-41d5-95a7-07d346f878eb",
+      "turns": [
+        {
+          "patient": "Please refill my Methylphenidate 20mg.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "To verify your identity, please provide your first name, last name, date of birth (YYYY-MM-DD), phone ending (last four digits) or ZIP code."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 8
+        },
+        {
+          "patient": "Priya Kim, DOB 1965-08-03, phone ending 0023.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Schedule II prescriptions cannot be refilled here. Please contact your prescriber. No refills remain. Please contact your prescriber for a new prescription. No refill has been submitted. No one has been contacted on your behalf."
+              }
+            ],
+            "state": "escalated"
+          },
+          "durationMs": 32
+        }
+      ],
+      "calls": [
+        {
+          "seq": 11,
+          "method": "POST",
+          "path": "/ehr/patients:match",
+          "query": {}
+        },
+        {
+          "seq": 12,
+          "method": "GET",
+          "path": "/ehr/patients/pat_002/medications",
+          "query": {}
+        },
+        {
+          "seq": 13,
+          "method": "GET",
+          "path": "/ehr/time",
+          "query": {}
+        }
+      ],
+      "refillPosts": 0,
+      "pharmacyPuts": 0
+    },
+    {
+      "name": "directory, confirmed pharmacy change and separate refill consent",
+      "conversationId": "phase9-ui-12a831d7-cb95-4b22-b10d-614ab3a95e6b",
+      "turns": [
+        {
+          "patient": "Please refill my Metformin 500mg.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "To verify your identity, please provide your first name, last name, date of birth (YYYY-MM-DD), phone ending (last four digits) or ZIP code."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 9
+        },
+        {
+          "patient": "Frank Vargas, DOB 1977-01-12, phone ending 3000.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Your current pharmacy is Bay Pharmacy (reference ph_001). Reply \"Yes, keep my pharmacy\" to submit your refill request for Metformin 500mg to this pharmacy, or ask for a different pharmacy. No refill has been submitted."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 30
+        },
+        {
+          "patient": "Show me available pharmacies.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Available pharmacies: 1. Bay Pharmacy, 123 Market St, San Francisco, CA 94103; 2. Mission Rx, 456 Valencia St, San Francisco, CA 94110; 3. Sunset Drugs, 789 Irving St, San Francisco, CA 94122; 4. Marina Health Pharmacy, 321 Chestnut St, San Francisco, CA 94123. Which one would you like? No pharmacy has been changed and no refill has been submitted."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 18
+        },
+        {
+          "patient": "Use the second one.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Change your pharmacy to Mission Rx, 456 Valencia St, San Francisco, CA 94110? Reply yes to change the pharmacy, or no to choose another. This confirmation does not submit the refill for Metformin 500mg."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 19
+        },
+        {
+          "patient": "Yes.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Your pharmacy destination has been verified. Your current pharmacy is Mission Rx (reference ph_002). Reply \"Yes, keep my pharmacy\" to submit your refill request for Metformin 500mg to this pharmacy, or ask for a different pharmacy. No refill has been submitted."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 19
+        },
+        {
+          "patient": "Yes.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "Your pharmacy destination has been verified. Your current pharmacy is Mission Rx (reference ph_002). Reply \"Yes, keep my pharmacy\" to submit your refill request for Metformin 500mg to this pharmacy, or ask for a different pharmacy. No refill has been submitted."
+              }
+            ],
+            "state": "in_progress"
+          },
+          "durationMs": 7
+        },
+        {
+          "patient": "Yes, keep my pharmacy.",
+          "httpStatus": 200,
+          "response": {
+            "messages": [
+              {
+                "from": "agent",
+                "text": "For Metformin 500mg at Mission Rx: Your refill request was submitted to the EHR service. This confirms submission, not dispensing or a new prescription."
+              }
+            ],
+            "state": "complete"
+          },
+          "durationMs": 21
+        }
+      ],
+      "calls": [
+        {
+          "seq": 14,
+          "method": "POST",
+          "path": "/ehr/patients:match",
+          "query": {}
+        },
+        {
+          "seq": 15,
+          "method": "GET",
+          "path": "/ehr/patients/pat_004/medications",
+          "query": {}
+        },
+        {
+          "seq": 16,
+          "method": "GET",
+          "path": "/ehr/time",
+          "query": {}
+        },
+        {
+          "seq": 17,
+          "method": "GET",
+          "path": "/ehr/patients/pat_004/pharmacy",
+          "query": {}
+        },
+        {
+          "seq": 18,
+          "method": "GET",
+          "path": "/pharmacy/directory",
+          "query": {
+            "q": ""
+          }
+        },
+        {
+          "seq": 19,
+          "method": "GET",
+          "path": "/pharmacy/directory",
+          "query": {
+            "q": ""
+          }
+        },
+        {
+          "seq": 20,
+          "method": "PUT",
+          "path": "/ehr/patients/pat_004/pharmacy",
+          "query": {},
+          "body": {
+            "pharmacyId": "ph_002"
+          }
+        },
+        {
+          "seq": 21,
+          "method": "GET",
+          "path": "/ehr/patients/pat_004/pharmacy",
+          "query": {}
+        },
+        {
+          "seq": 22,
+          "method": "GET",
+          "path": "/ehr/patients/pat_004/pharmacy",
+          "query": {}
+        },
+        {
+          "seq": 23,
+          "method": "GET",
+          "path": "/ehr/patients/pat_004/medications",
+          "query": {}
+        },
+        {
+          "seq": 24,
+          "method": "GET",
+          "path": "/ehr/time",
+          "query": {}
+        },
+        {
+          "seq": 25,
+          "method": "GET",
+          "path": "/ehr/patients/pat_004/pharmacy",
+          "query": {}
+        },
+        {
+          "seq": 26,
+          "method": "POST",
+          "path": "/ehr/patients/pat_004/refills",
+          "query": {},
+          "body": {
+            "medId": "m_ok"
+          }
+        }
+      ],
+      "refillPosts": 1,
+      "pharmacyPuts": 1
+    }
+  ],
+  "turns": 14,
+  "totalRefillPosts": 2,
+  "totalPharmacyPuts": 1,
+  "unintendedDuplicates": 0,
+  "clinicallyBlockedWrites": 0
+}

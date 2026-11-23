@@ -14,13 +14,14 @@ import { assessLiveProvider } from "./live-validation.js";
 
 export const LIVE_MODEL = "openai/gpt-oss-120b";
 export class LivePreflightError extends Error {
+  /** Represent a sanitized opt-in, credential-rotation, runtime or model preflight blocker. */
   constructor(readonly code: "arguments" | "rotation_unconfirmed" | "runtime" | "model") {
     super(`Live evaluation blocked (${code}).`); this.name = "LivePreflightError";
   }
 }
 
-/** Evaluate authorization before loading any local credentials. A flag is an explicit human
- * acknowledgement, not independent evidence that the provider has revoked an old key. */
+// The flag is human acknowledgement, not independent evidence that the provider revoked an old key.
+/** Validate evaluation opt-in, rotation acknowledgement and runtime before loading credentials. */
 export function liveMode(args: readonly string[], version: string): "list" | "run" {
   if (args.length === 1 && args[0] === "--list") return "list";
   if (args.some(arg => arg !== "--confirm-rotated-key") || args.length > 1) throw new LivePreflightError("arguments");
@@ -29,6 +30,7 @@ export function liveMode(args: readonly string[], version: string): "list" | "ru
   return "run";
 }
 
+/** Run opt-in isolated live conversations and persist only sanitized reproducible evaluation evidence. */
 export async function main(args: readonly string[]): Promise<void> {
   const mode = liveMode(args, process.version);
   const dataset = liveDatasetSchema.parse(JSON.parse(readFileSync(new URL("../mock/dataset.json", import.meta.url), "utf8")));
@@ -55,17 +57,24 @@ export async function main(args: readonly string[]): Promise<void> {
     if (observer.stopReason) break;
     let activeTurn = -1;
     const scored = new Set<number>();
-    const interpreter: LanguageInterpreter = { interpret: async text => {
-      const proposal = await provider.interpret(text);
-      const expected = scenario.modelExpected.find(label => label.turnIndex === activeTurn);
-      if (expected && !scored.has(activeTurn)) {
-        labels.push({ scenarioId: scenario.id, turnIndex: activeTurn, score: scoreModelProposal(expected, proposal) });
-        scored.add(activeTurn);
+    const interpreter: LanguageInterpreter = {
+      /** Score an actual validated model proposal against the current synthetic turn label. */
+      interpret: async text => {
+        const proposal = await provider.interpret(text);
+        const expected = scenario.modelExpected.find(label => label.turnIndex === activeTurn);
+        if (expected && !scored.has(activeTurn)) {
+          labels.push({ scenarioId: scenario.id, turnIndex: activeTurn, score: scoreModelProposal(expected, proposal) });
+          scored.add(activeTurn);
+        }
+        return proposal;
       }
-      return proposal;
-    } };
+    };
     try {
-      const result = await runMockScenario(scenario, { interpreter, onTurnStart: index => { activeTurn = index; } });
+      const result = await runMockScenario(scenario, {
+        interpreter,
+        /** Bind subsequent interpretation metrics to the active conversation turn index. */
+        onTurnStart: index => { activeTurn = index; }
+      });
       results.push(result);
       console.log(JSON.stringify({ scenario: scenario.id, passed: result.passed, state: result.finalState,
         refillPosts: result.effects.refillPosts, pharmacyUpdates: result.effects.pharmacyUpdates }));

@@ -20,10 +20,12 @@ export interface IdentityMatcher {
 export class HttpEhrIdentityMatcher implements IdentityMatcher {
   readonly #transport: IdentityHttpTransport;
 
+  /** Compose the narrowly scoped identity-match HTTP transport. */
   constructor(config: EhrIdentityConfig, dependencies: EhrDependencies = {}) {
     this.#transport = new IdentityHttpTransport(config, dependencies);
   }
 
+  /** Require sufficient validated identity factors and validate the unique-match service contract. */
   async match(input: IdentityFactors): Promise<MatchResult> {
     let factors: IdentityFactors;
     try { factors = validateIdentityFactors(input); }

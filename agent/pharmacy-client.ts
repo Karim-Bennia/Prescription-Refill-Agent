@@ -29,6 +29,7 @@ export class HttpPharmacyService implements PharmacyService {
   readonly #directory: ClinicalHttpTransport;
   readonly #ehr: ClinicalHttpTransport;
 
+  /** Compose separate authenticated transports for directory reads and EHR pharmacy updates. */
   constructor(config: PharmacyServiceConfig, dependencies: ClinicalEhrDependencies = {}) {
     const limits = { timeoutMs: config.timeoutMs, maxRetries: config.maxRetries };
     this.#directory = new ClinicalHttpTransport({
@@ -39,6 +40,7 @@ export class HttpPharmacyService implements PharmacyService {
     }, dependencies);
   }
 
+  /** Retrieve and validate actual pharmacy-directory records for the supplied search text. */
   async search(query: string): Promise<DirectoryPharmacy[]> {
     const response = await this.#directory.execute({ kind: "directory", query });
     const parsed = directoryListSchema.safeParse(response);
@@ -46,6 +48,7 @@ export class HttpPharmacyService implements PharmacyService {
     return parsed.data;
   }
 
+  /** Perform one pharmacy update and require the documented confirmation response. */
   async update(patientId: string, pharmacyId: string): Promise<void> {
     const response = await this.#ehr.execute({ kind: "pharmacy_update", patientId, pharmacyId });
     if (!updateResponseSchema.safeParse(response).success) {

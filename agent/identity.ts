@@ -18,12 +18,14 @@ export const identityFactorsSchema = z.strictObject({
 export type IdentityFactors = z.infer<typeof identityFactorsSchema>;
 
 export class IdentityValidationError extends Error {
+  /** Represent invalid identity factors without retaining the supplied demographics. */
   constructor() {
     super("Identity information is invalid.");
     this.name = "IdentityValidationError";
   }
 }
 
+/** Validate the supported identity factors and reject unexpected or malformed fields. */
 export function validateIdentityFactors(value: unknown): IdentityFactors {
   const parsed = identityFactorsSchema.safeParse(value);
   if (!parsed.success) throw new IdentityValidationError();
@@ -37,6 +39,7 @@ export function hasRequiredIdentity(factors: IdentityFactors): boolean {
     && (valid.data.phoneLast4 || valid.data.zip));
 }
 
+/** List the remaining factors required by the assessment identity-strength policy. */
 export function missingIdentityFields(factors: IdentityFactors): readonly string[] {
   const missing: string[] = [];
   if (!factors.firstName) missing.push("firstName");
@@ -47,7 +50,9 @@ export function missingIdentityFields(factors: IdentityFactors): readonly string
 }
 
 const factorKeys = ["firstName", "lastName", "dob", "phoneLast4", "zip"] as const;
+/** Normalize literal identity evidence for Unicode-aware case and whitespace comparisons. */
 const normalize = (text: string): string => text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+/** Escape literal identity text before using it in an evidence-matching regular expression. */
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const numericPatterns = {
   dob: /\b(?:dob|date\s+of\s+birth|born(?:\s+on)?|birthday)\s*(?::|=|is\b)?\s*(\d{4}-\d{2}-\d{2})\b/i,
@@ -55,7 +60,8 @@ const numericPatterns = {
   zip: /\b(?:zip(?:\s+code)?|postal\s+code)\s*(?::|=|is\b)?\s*(\d{5}(?:-\d{4})?)\b/i,
 };
 
-/** Model fields are proposals. Only literal evidence from this patient turn is retained. */
+// Model fields are proposals; only literal evidence from this patient turn is retained.
+/** Retain only schema-valid identity factors grounded in literal patient input. */
 export function groundIdentityFactors(proposal: Interpretation["identity"], text: string): IdentityFactors {
   const grounded: IdentityFactors = {};
   const evidence = normalize(text);
@@ -76,7 +82,8 @@ export function groundIdentityFactors(proposal: Interpretation["identity"], text
   return grounded;
 }
 
-/** Returns new factors only. The caller owns corrections and session-state merging. */
+// The caller owns corrections and session-state merging.
+/** Extract new supported identity factors from explicit patient wording. */
 export function extractIdentityFactors(text: string, existing: IdentityFactors = {}): IdentityFactors {
   const proposed: Interpretation["identity"] = {
     firstName: null, lastName: null, dob: null, phoneLast4: null, zip: null,

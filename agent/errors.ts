@@ -13,6 +13,7 @@ export class LlmProviderError extends Error {
   readonly status?: number;
   readonly retryAfterMs?: number;
 
+  /** Retain only an allowlisted model-error category and safe retry metadata. */
   constructor(code: LlmErrorCode, details: ErrorDetails = {}) {
     // Error objects must never retain bodies, causes, prompts, headers or credentials.
     super(`Language provider failed (${code}).`);

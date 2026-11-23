@@ -10,6 +10,7 @@ import { assertSavedPharmacyPrompt, assertSessionPatient, sessionSelectionVersio
 type SelectedState = Extract<ConversationState, { phase: "awaiting_pharmacy_confirmation" }>;
 interface ChangeRecord { scope: string; kind: "pending" | "updated" | "unknown" | "rejected" }
 
+/** Limit visible directory choices so the complete patient reply fits its schema. */
 function displayedCandidates(records: DirectoryPharmacy[]): DirectoryPharmacy[] {
   const visible: DirectoryPharmacy[] = [];
   let length = 0;
@@ -23,6 +24,7 @@ function displayedCandidates(records: DirectoryPharmacy[]): DirectoryPharmacy[] 
   return visible;
 }
 
+/** Describe the saved pharmacy question and the exact action its confirmation permits. */
 export function pharmacyReply(state: SelectedState): string {
   const prompt = state.pharmacyContext;
   if (!prompt) return "Pharmacy information is required before submission. Please retry. No refill has been submitted.";
@@ -43,13 +45,16 @@ export function pharmacyReply(state: SelectedState): string {
 /** Serialized conversational effects; only RefillActions can execute a refill POST. */
 export class PharmacyWorkflow {
   readonly #changes = new Map<string, ChangeRecord>();
+  /** Inject authorized reads, pharmacy integration and the sole guarded refill kernel. */
   constructor(readonly reader: PatientClinicalReader, readonly directory: PharmacyService, readonly actions: RefillActions) {}
 
+  /** Restore retained refill outcomes before accepting another authenticated action. */
   async recover(state: ConversationState, context: SessionContext | undefined): Promise<ClinicalProgress | undefined> {
     const result = await this.actions.recoverRecorded(state, context);
     return result ? { state: result.state, message: "An earlier refill request has a recorded outcome. " + clinicalReply(result.state), cache: true } : undefined;
   }
 
+  /** Retrieve the actual current pharmacy and save the corresponding consent question. */
   async prepare(state: ConversationState, context: SessionContext | undefined): Promise<ClinicalProgress> {
     if (state.phase !== "awaiting_pharmacy_confirmation") return { state, message: clinicalReply(state), cache: true };
     const recovered = await this.recover(state, context);
@@ -63,6 +68,7 @@ export class PharmacyWorkflow {
     } catch { return this.#unavailable(state); }
   }
 
+  /** Interpret a pharmacy turn within the saved question and enforce deterministic consent guards. */
   async handle(state: SelectedState, text: string, context: SessionContext | undefined): Promise<ClinicalProgress> {
     assertSessionPatient(context, state);
     const recovered = await this.recover(state, context);
@@ -123,6 +129,7 @@ export class PharmacyWorkflow {
     } catch { return this.#unavailable(state); }
   }
 
+  /** Retrieve validated directory choices and save an unambiguous confirmation or selection question. */
   async #search(state: SelectedState, query: string, context: SessionContext | undefined): Promise<ClinicalProgress> {
     // A change request invalidates the old confirmation even when directory access fails.
     const searching = transition(state, { type: "pharmacy_prompt", context: { stage: "search", candidates: [] } });
@@ -141,6 +148,7 @@ export class PharmacyWorkflow {
     } catch { return this.#unavailable(searching); }
   }
 
+  /** Revalidate saved consent and directory evidence before one guarded pharmacy update. */
   async #change(state: SelectedState, destination: DirectoryPharmacy, context: SessionContext): Promise<ClinicalProgress> {
     assertSavedPharmacyPrompt(context, state);
     const patientId = assertSessionPatient(context, state);
@@ -174,6 +182,7 @@ export class PharmacyWorkflow {
     return this.#verifyChange(state, destination, context, record);
   }
 
+  /** Read back the authoritative destination and require fresh refill confirmation after a change. */
   async #verifyChange(state: SelectedState, destination: DirectoryPharmacy, context: SessionContext, record: ChangeRecord): Promise<ClinicalProgress> {
     try {
       const pharmacy = await this.reader.pharmacy(state, context);
@@ -188,12 +197,15 @@ export class PharmacyWorkflow {
     }
   }
 
+  /** Build a cached workflow response from trusted pharmacy or clinical state. */
   #progress(state: ConversationState, prefix = ""): ClinicalProgress {
     return { state, message: prefix + (state.phase === "awaiting_pharmacy_confirmation" ? pharmacyReply(state) : clinicalReply(state)), cache: true };
   }
+  /** Enter a terminal clinical stop for rejected or uncertain pharmacy mutations. */
   #stop(state: SelectedState, reason: "pharmacy_unknown" | "pharmacy_rejected"): ClinicalProgress {
     return this.#progress(transition(state, { type: "clinical_stop", reason, policyReasons: [] }));
   }
+  /** Return a recoverable service-failure reply without claiming a new submission. */
   #unavailable(state: SelectedState): ClinicalProgress {
     return { state, message: "Pharmacy or prescription information is temporarily unavailable. Please retry. No new submission has been confirmed.", cache: false };
   }

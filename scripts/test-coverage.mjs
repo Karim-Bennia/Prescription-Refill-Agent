@@ -9,7 +9,7 @@ const { scripts } = JSON.parse(readFileSync(new URL("package.json", root), "utf8
 const prefix = "tsx --test ";
 if (!scripts.test.startsWith(prefix)) throw new Error("Unsupported test command; update coverage runner.");
 const files = scripts.test.slice(prefix.length).split(/\s+/);
-if (!files.length || !files.every(file => /^tests\/[A-Za-z0-9.-]+\.test\.(?:ts|mjs)$/.test(file))) {
+if (!files.length || !files.every(file => /^(?:tests|frontend\/tests)\/[A-Za-z0-9.-]+\.test\.(?:ts|tsx|mjs)$/.test(file))) {
   throw new Error("Unexpected test paths.");
 }
 // An absolute Windows drive path is not a valid ESM specifier; a file URL works on all hosts.
